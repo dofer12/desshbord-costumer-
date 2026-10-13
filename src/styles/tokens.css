@@ -1,0 +1,62 @@
+/* Design tokens carried over from the original "יומן משימות מוקד" app. */
+:root {
+  color-scheme: light;
+  --bg: #eef2f3;
+  --surface: #fbfcfc;
+  --sunken: #e2e9eb;
+  --line: #cdd7da;
+  --fg: #14262e;
+  --muted: #566a72;
+  --accent: #0e6b75;
+  --accent-fg: #ffffff;
+  --accent-soft: #d5eaec;
+  --warn: #a65f00;
+  --warn-soft: #fbedd3;
+  --crit: #b53026;
+  --crit-soft: #f9dedb;
+  --ok: #1c7746;
+  --ok-soft: #d8efe1;
+  --font-display: 'Secular One', 'Rubik', 'Arial Hebrew', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans Hebrew', 'Heebo', 'Segoe UI', 'Arial Hebrew', system-ui, -apple-system, Arial, sans-serif;
+  --r: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0e171b;
+    --surface: #16232a;
+    --sunken: #0a1215;
+    --line: #2b3d45;
+    --fg: #e2ecee;
+    --muted: #95a8af;
+    --accent: #56c2ca;
+    --accent-fg: #06262a;
+    --accent-soft: #173b40;
+    --warn: #f0b04a;
+    --warn-soft: #3a2c12;
+    --crit: #f2867c;
+    --crit-soft: #3d1b18;
+    --ok: #6fd29a;
+    --ok-soft: #143424;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e171b;
+  --surface: #16232a;
+  --sunken: #0a1215;
+  --line: #2b3d45;
+  --fg: #e2ecee;
+  --muted: #95a8af;
+  --accent: #56c2ca;
+  --accent-fg: #06262a;
+  --accent-soft: #173b40;
+  --warn: #f0b04a;
+  --warn-soft: #3a2c12;
+  --crit: #f2867c;
+  --crit-soft: #3d1b18;
+  --ok: #6fd29a;
+  --ok-soft: #143424;
+}

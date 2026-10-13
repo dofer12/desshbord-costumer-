@@ -1,0 +1,31 @@
+import { render } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
+import { App } from '../App'
+import { AuthProvider } from '../features/auth/AuthProvider'
+import { createAuthStore } from '../features/auth/authStore'
+import { createFakeGateway, type FakeGateway } from './fakeGateway'
+
+interface RenderOptions {
+  /** Initial route, default "/". */
+  path?: string
+  /** Adjust the fake backend before the store starts. */
+  configure?: (fake: FakeGateway) => void
+  /** Set to false to leave the store in its initial "loading" state. */
+  init?: boolean
+}
+
+/** Renders the whole app against a fake backend. `ready` resolves when start-up has settled. */
+export function renderApp(options: RenderOptions = {}) {
+  const fake = createFakeGateway()
+  options.configure?.(fake)
+  const store = createAuthStore(fake.gateway)
+  const ready = options.init === false ? Promise.resolve() : store.getState().init()
+  render(
+    <AuthProvider store={store}>
+      <MemoryRouter initialEntries={[options.path ?? '/']}>
+        <App serverHost="test.supabase.co" />
+      </MemoryRouter>
+    </AuthProvider>,
+  )
+  return { fake, store, ready }
+}
