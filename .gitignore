@@ -1,0 +1,29 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+node_modules
+dist
+dist-ssr
+dist-electron
+release
+# .env.local holds developer-only placeholder values and never ships
+*.local
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Signing keys and tool caches must never be committed
+*.p12
+*.jks
+*.keystore
+.serena/
