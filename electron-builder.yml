@@ -1,0 +1,23 @@
+appId: io.github.dofer12.moked
+productName: Moked
+copyright: Copyright © 2026 dofer12
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+asar: true
+win:
+  target:
+    - target: nsis
+      arch: x64
+  artifactName: Moked-Setup-${version}.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+publish:
+  provider: github
+  owner: dofer12
+  repo: desshbord-costumer-
