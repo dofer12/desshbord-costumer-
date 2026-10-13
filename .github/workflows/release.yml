@@ -1,0 +1,148 @@
+name: Release
+
+# Tag a version (git tag v0.1.0 && git push origin v0.1.0) to publish an APK and a
+# Windows installer as a GitHub Release. "Run workflow" builds the same files as
+# downloadable artifacts only (debug-signed APK), which is how the pipeline is tested.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      android_version_code: ${{ steps.resolve.outputs.android_version_code }}
+      is_release: ${{ steps.mode.outputs.is_release }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - id: mode
+        run: echo "is_release=${{ github.ref_type == 'tag' }}" >> "$GITHUB_OUTPUT"
+      - id: resolve
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: node scripts/release-version.ts "$TAG" >> "$GITHUB_OUTPUT"
+      - name: Check the server settings in .env
+        if: steps.mode.outputs.is_release == 'true'
+        run: node scripts/check-config.ts
+
+  android:
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      VERSION_CODE: ${{ needs.version.outputs.android_version_code }}
+      IS_RELEASE: ${{ needs.version.outputs.is_release }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - name: Restore the signing key
+        if: env.IS_RELEASE == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::The ANDROID_KEYSTORE_BASE64 secret is missing. See docs/setup-he.md, the Android signing key section."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/moked-release.p12"
+          keytool -list -keystore "$RUNNER_TEMP/moked-release.p12" -storetype PKCS12 \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" > /dev/null
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/moked-release.p12" >> "$GITHUB_ENV"
+      - name: Build the APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          if [ "$IS_RELEASE" = "true" ]; then TASK=assembleRelease; else TASK=assembleDebug; fi
+          ./gradlew "$TASK" --no-daemon -PmokedVersionName="$VERSION" -PmokedVersionCode="$VERSION_CODE"
+      - name: Collect the APK and show who signed it
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/*/*.apk "out/Moked-${VERSION}.apk"
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$APKSIGNER" verify --print-certs "out/Moked-${VERSION}.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          path: out/*.apk
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run electron:compile
+      - run: npx electron-builder --win nsis --publish never
+      - name: Smoke-test the packaged app
+        env:
+          MOKED_SMOKE_SHOT: ${{ runner.temp }}\moked-smoke.png
+        run: node scripts/electron-smoke.mjs --exe release/win-unpacked/Moked.exe
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-windows
+          path: ${{ runner.temp }}\moked-smoke.png
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: |
+            release/Moked-Setup-*.exe
+            release/Moked-Setup-*.exe.blockmap
+            release/latest.yml
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [version, android, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: artifacts
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
