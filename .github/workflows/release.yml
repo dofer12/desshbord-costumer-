@@ -1,13 +1,17 @@
 name: Release
 
 # Tag a version (git tag v0.1.0 && git push origin v0.1.0) to publish an APK and a
-# Windows installer as a GitHub Release. "Run workflow" builds the same files as
-# downloadable artifacts only, which is how the pipeline is rehearsed: with "sign"
-# ticked it builds the APK with the release key exactly as a tag does, without it
-# the APK is debug-signed. Only a tag publishes anything.
+# Windows installer as a GitHub Release.
+#
+# To rehearse a release without publishing anything, push a branch whose name starts with
+# "rehearse/" (git push origin HEAD:refs/heads/rehearse/try-1). It builds exactly what a tag
+# builds, with the release key, and leaves the files as downloadable artifacts. Only a tag
+# publishes. ("Run workflow" works too once this file is on the default branch; it builds a
+# debug-signed APK unless "sign" is ticked.)
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
+    branches: ['rehearse/**']
   workflow_dispatch:
     inputs:
       sign:
@@ -37,9 +41,10 @@ jobs:
       - id: mode
         env:
           IS_TAG: ${{ github.ref_type == 'tag' }}
+          IS_REHEARSAL: ${{ startsWith(github.ref, 'refs/heads/rehearse/') }}
           SIGN_INPUT: ${{ inputs.sign }}
         run: |
-          if [ "$IS_TAG" = "true" ] || [ "$SIGN_INPUT" = "true" ]; then SIGN=true; else SIGN=false; fi
+          if [ "$IS_TAG" = "true" ] || [ "$IS_REHEARSAL" = "true" ] || [ "$SIGN_INPUT" = "true" ]; then SIGN=true; else SIGN=false; fi
           echo "sign=$SIGN" >> "$GITHUB_OUTPUT"
       - id: resolve
         env:

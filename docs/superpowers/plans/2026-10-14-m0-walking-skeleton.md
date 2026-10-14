@@ -4321,3 +4321,23 @@ Tell the owner M0 is accepted. The next step is the plan for M1 (the task data m
 | CI and the release pipeline (GitHub Actions) | 10, 11, 13 |
 | One-time owner setup guide | 12 |
 | Acceptance on a real phone and a real laptop | 13 |
+
+---
+
+## Revisions after the final review
+
+A whole-branch review by a fresh reviewer (2026-10-14) found problems in this plan's own code. They were fixed on the branch, each with tests, and where the files differ from the code blocks above, the files under `src/`, `supabase/`, `scripts/` and `.github/` are authoritative. What changed:
+
+- **Task 4, `errors.ts`:** a Hebrew message for `email_not_confirmed`, and `classifyProfileFailure`, which decides what a failed profile request means.
+- **Task 5, store and gateway:** sign-out ends this device only (`signOut({ scope: 'local' })`). The profile query does not retry on its own, and its HTTP status travels with the error. Server trouble (network, 5xx, 408, 429) keeps the session and shows the retry screen, a 401 explains that the session ended, and 403 or 404 mean "not set up". Start-up stops waiting after `SLOW_START_MS` (5 seconds) and offers a retry, while still accepting a late answer; a start-up that a retry replaced can no longer overwrite the newer state. New tests run the real supabase-js client against a stubbed network: `src/features/auth/supabaseGateway.contract.test.ts`.
+- **Task 7, migration:** a display name derived from the email is numbered when it collides (`dana`, `dana 2`), and a name typed on purpose still has to be unique. Later users start inactive unless `app_metadata.role` holds a valid role (only the service role can write it), which is spec section 8's second layer. The backfill follows the same rules.
+- **Task 10, gate:** `scripts/check-config.ts` uses Node alone, because the release workflow runs it before `npm ci`. Tests pin its `.env` loading to Vite's and run it from a checkout with no `node_modules`.
+- **Task 11, workflow:** the gate runs on every run. Pushing a branch named `rehearse/*` builds exactly what a tag builds, signed with the release key, and publishes nothing. GitHub documents that the "Run workflow" button needs the file on the default branch, and that API or CLI dispatch works only after a first run, so the signed path would otherwise first run on the irreversible tag.
+- **Task 12, guide:** `gh auth login -s workflow` (the default token cannot push workflow files), new troubleshooting rows, and how to activate an added user.
+
+**Task 13, as it should now be run:**
+
+1. Step 1: the suite is now `Test Files  15 passed (15)` and `Tests  149 passed (149)`; what matters is that nothing fails. After writing `.env`, check the owner's real project with two harmless requests. `curl -s -X POST "<URL>/auth/v1/signup" -H "apikey: <key>" -H "Content-Type: application/json" -d '{"email":"not-an-email","password":"x"}'` must answer `signup_disabled`; any other answer means self sign-up is still on, so ask the owner to switch it off. `curl -s "<URL>/rest/v1/profiles?select=id" -H "apikey: <key>"` must answer a permission error (`42501`), which proves the SQL was run and that `anon` reads nothing.
+2. Step 2 needs the owner's `gh auth login -s workflow`.
+3. Do Step 5 (signing key and secrets) before Step 4. Replace Step 4's `gh workflow run release.yml --ref feat/platform-core` with `git push origin HEAD:refs/heads/rehearse/m0`, then watch it with `gh run list --workflow release.yml --limit 1` and `gh run watch --exit-status`. It takes the signed path, so its APK carries the release certificate: compare the fingerprint it prints with the one from Step 5. Afterwards delete the rehearsal branch (`git push origin --delete rehearse/m0`).
+4. Do not merge this branch into `main` before the Pages cutover (`pages.yml`). `static.yml` publishes the whole repository root on every push to `main`, and the root `index.html` is now the Vite entry page instead of the old app.
