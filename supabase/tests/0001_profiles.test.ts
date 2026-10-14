@@ -36,23 +36,51 @@ describe('handle_new_user', () => {
     })
   })
 
-  it('honours app_metadata.role for later users and ignores unknown roles', async () => {
+  // Spec section 8: even if a user gets created (a sign-up toggle left on, a user added in the
+  // dashboard), without an active profile row RLS blocks everything.
+  it('starts every later user inactive, so a stray account sees nothing until someone activates it', async () => {
     await addUser(db, 'owner@example.com')
+    const id = await addUser(db, 'dana@example.com')
+    expect(await profileOf(id)).toMatchObject({ is_active: false })
+  })
+
+  it('activates a later user only when an admin tool provisions it with a role in app_metadata', async () => {
+    await addUser(db, 'owner@example.com')
+    const employee = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
     const boss = await addUser(db, 'boss@example.com', { appMeta: { role: 'admin' } })
-    const odd = await addUser(db, 'odd@example.com', { appMeta: { role: 'root' } })
-    expect(await profileOf(boss)).toMatchObject({ role: 'admin' })
-    expect(await profileOf(odd)).toMatchObject({ role: 'employee' })
+    expect(await profileOf(employee)).toMatchObject({ role: 'employee', is_active: true, must_change_password: true })
+    expect(await profileOf(boss)).toMatchObject({ role: 'admin', is_active: true })
   })
 
-  it('never takes the role from user-editable user_metadata', async () => {
+  it('ignores an unknown role and leaves that user an inactive employee', async () => {
     await addUser(db, 'owner@example.com')
-    const id = await addUser(db, 'sneaky@example.com', { meta: { role: 'admin' } })
-    expect(await profileOf(id)).toMatchObject({ role: 'employee' })
+    const odd = await addUser(db, 'odd@example.com', { appMeta: { role: 'root' } })
+    expect(await profileOf(odd)).toMatchObject({ role: 'employee', is_active: false })
   })
 
-  it('rejects a second user whose display name matches case-insensitively', async () => {
+  it('never takes the role or the activation from user-editable user_metadata', async () => {
+    await addUser(db, 'owner@example.com')
+    const id = await addUser(db, 'sneaky@example.com', { meta: { role: 'admin', is_active: true } })
+    expect(await profileOf(id)).toMatchObject({ role: 'employee', is_active: false })
+  })
+
+  it('keeps names derived from the email unique, so creating a user never fails because of them', async () => {
+    const first = await addUser(db, 'dana@gmail.com')
+    const second = await addUser(db, 'dana@walla.co.il')
+    const third = await addUser(db, 'DANA@example.org')
+    expect(await profileOf(first)).toMatchObject({ display_name: 'dana' })
+    expect(await profileOf(second)).toMatchObject({ display_name: 'dana 2' })
+    expect(await profileOf(third)).toMatchObject({ display_name: 'DANA 3' })
+  })
+
+  it('still rejects a name chosen on purpose that is taken, ignoring case', async () => {
+    await addUser(db, 'owner@example.com', { meta: { display_name: 'Dana' } })
+    await expect(addUser(db, 'other@example.com', { meta: { display_name: 'dana' } })).rejects.toThrow(/duplicate key/i)
+  })
+
+  it('does not rename a name chosen on purpose that collides with a name derived from an email', async () => {
     await addUser(db, 'dana@example.com')
-    await expect(addUser(db, 'DANA@other.com')).rejects.toThrow(/duplicate key/i)
+    await expect(addUser(db, 'someone@example.com', { meta: { display_name: 'Dana' } })).rejects.toThrow(/duplicate key/i)
   })
 
   it('removes the profile when the auth user is deleted', async () => {
@@ -70,10 +98,45 @@ describe('users that existed before the migration ran', () => {
           ('00000000-0000-0000-0000-000000000002', 'second@example.com', '2026-01-02'),
           ('00000000-0000-0000-0000-000000000001', 'first@example.com', '2026-01-01')`)
     })
-    const r = await seeded.query('select email, role, must_change_password from public.profiles order by email')
+    const r = await seeded.query(
+      'select email, role, is_active, must_change_password from public.profiles order by email',
+    )
     expect(r.rows).toEqual([
-      { email: 'first@example.com', role: 'admin', must_change_password: false },
-      { email: 'second@example.com', role: 'employee', must_change_password: true },
+      { email: 'first@example.com', role: 'admin', is_active: true, must_change_password: false },
+      // Same rule as for a new user: only the oldest is active until an admin says otherwise.
+      { email: 'second@example.com', role: 'employee', is_active: false, must_change_password: true },
+    ])
+  })
+
+  it('keep a role and the activation that an admin tool gave them', async () => {
+    const seeded = await createDb(async (d) => {
+      await d.exec(`
+        insert into auth.users (id, email, created_at, raw_app_meta_data) values
+          ('00000000-0000-0000-0000-000000000001', 'first@example.com', '2026-01-01', '{}'),
+          ('00000000-0000-0000-0000-000000000002', 'boss@example.com', '2026-01-02', '{"role":"admin"}'),
+          ('00000000-0000-0000-0000-000000000003', 'odd@example.com', '2026-01-03', '{"role":"root"}')`)
+    })
+    const r = await seeded.query('select email, role, is_active from public.profiles order by email')
+    expect(r.rows).toEqual([
+      { email: 'boss@example.com', role: 'admin', is_active: true },
+      { email: 'first@example.com', role: 'admin', is_active: true },
+      { email: 'odd@example.com', role: 'employee', is_active: false },
+    ])
+  })
+
+  it('do not make the migration fail when their email names collide', async () => {
+    const seeded = await createDb(async (d) => {
+      await d.exec(`
+        insert into auth.users (id, email, created_at) values
+          ('00000000-0000-0000-0000-000000000001', 'dana@gmail.com', '2026-01-01'),
+          ('00000000-0000-0000-0000-000000000002', 'dana@walla.co.il', '2026-01-02'),
+          ('00000000-0000-0000-0000-000000000003', 'DANA@example.org', '2026-01-03')`)
+    })
+    const r = await seeded.query('select email, display_name from public.profiles order by email')
+    expect(r.rows).toEqual([
+      { email: 'DANA@example.org', display_name: 'DANA 3' },
+      { email: 'dana@gmail.com', display_name: 'dana' },
+      { email: 'dana@walla.co.il', display_name: 'dana 2' },
     ])
   })
 
@@ -89,9 +152,15 @@ describe('membership helpers', () => {
 
   it('reports membership and admin status for the calling user', async () => {
     const admin = await addUser(db, 'owner@example.com')
-    const emp = await addUser(db, 'dana@example.com')
+    const emp = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
     expect((await as(db, { id: admin }, flags)).rows[0]).toEqual({ m: true, a: true })
     expect((await as(db, { id: emp }, flags)).rows[0]).toEqual({ m: true, a: false })
+  })
+
+  it('does not count a user nobody has activated as a member', async () => {
+    await addUser(db, 'owner@example.com')
+    const stray = await addUser(db, 'stray@example.com')
+    expect((await as(db, { id: stray }, flags)).rows[0]).toEqual({ m: false, a: false })
   })
 
   it('treats a deactivated user as neither member nor admin', async () => {
@@ -107,6 +176,13 @@ describe('profiles row level security', () => {
     await addUser(db, 'dana@example.com')
     const r = await as(db, { id: admin }, () => db.query('select id from public.profiles'))
     expect(r.rows).toHaveLength(2)
+  })
+
+  it('shows a user nobody has activated nothing', async () => {
+    await addUser(db, 'owner@example.com')
+    const stray = await addUser(db, 'stray@example.com')
+    const r = await as(db, { id: stray }, () => db.query('select id from public.profiles'))
+    expect(r.rows).toHaveLength(0)
   })
 
   it('shows a deactivated user nothing', async () => {

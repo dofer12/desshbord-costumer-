@@ -59,27 +59,54 @@ set search_path = ''
 as $$
 declare
   v_is_first boolean;
+  v_app_role text;
   v_role text;
+  v_chosen_name text;
+  v_base_name text;
   v_name text;
+  v_attempt integer := 1;
+  v_constraint text;
 begin
   select not exists (select 1 from public.profiles) into v_is_first;
 
-  v_role := case
-    when v_is_first then 'admin'
-    else coalesce(nullif(new.raw_app_meta_data ->> 'role', ''), 'employee')
-  end;
-  if v_role not in ('admin', 'employee') then
-    v_role := 'employee';
+  -- Only the service role can write app_metadata, so a valid role there means an admin tool
+  -- created this user on purpose. Anyone else (a sign-up that was left switched on, a user added
+  -- in the dashboard) gets an inactive profile, which RLS treats as no access at all, until an
+  -- admin activates it. The very first user is the exception: the owner creates it.
+  v_app_role := nullif(new.raw_app_meta_data ->> 'role', '');
+  if v_app_role is not null and v_app_role not in ('admin', 'employee') then
+    v_app_role := null;
   end if;
+  v_role := case when v_is_first then 'admin' else coalesce(v_app_role, 'employee') end;
 
-  v_name := coalesce(
-    nullif(btrim(new.raw_user_meta_data ->> 'display_name'), ''),
-    nullif(split_part(coalesce(new.email, ''), '@', 1), ''),
-    'user'
-  );
+  v_chosen_name := nullif(btrim(new.raw_user_meta_data ->> 'display_name'), '');
+  v_base_name := coalesce(nullif(split_part(coalesce(new.email, ''), '@', 1), ''), 'user');
+  v_name := coalesce(v_chosen_name, v_base_name);
 
-  insert into public.profiles (id, email, display_name, role, must_change_password)
-  values (new.id, coalesce(new.email, ''), v_name, v_role, not v_is_first);
+  loop
+    begin
+      insert into public.profiles (id, email, display_name, role, is_active, must_change_password)
+      values (
+        new.id,
+        coalesce(new.email, ''),
+        v_name,
+        v_role,
+        v_is_first or v_app_role is not null,
+        not v_is_first
+      );
+      exit;
+    exception when unique_violation then
+      get stacked diagnostics v_constraint = constraint_name;
+      -- A name somebody typed must stay unique, and the error says so. A name derived from the
+      -- email only has to be unique ("dana", "dana 2", ...): creating a user must not fail
+      -- because two colleagues share the part before the @.
+      if v_constraint is distinct from 'profiles_display_name_key' or v_chosen_name is not null then
+        raise;
+      end if;
+      v_attempt := v_attempt + 1;
+      v_name := v_base_name || ' ' || v_attempt;
+    end;
+  end loop;
 
   return new;
 end;
@@ -98,16 +125,31 @@ create policy profiles_select_members
   using (public.is_member());
 
 -- Users that already existed when this ran (for example the owner created the first
--- user before running this file) still get a profile. The oldest of them is the admin.
-insert into public.profiles (id, email, display_name, role, must_change_password)
+-- user before running this file) still get a profile, by the same rules as a new user:
+-- the oldest is the active admin, and the others stay inactive unless an admin tool gave
+-- them a role. Names derived from the same email prefix get a number ("dana", "dana 2").
+with ranked as (
+  select
+    u.id,
+    coalesce(u.email, '') as email,
+    case when u.raw_app_meta_data ->> 'role' in ('admin', 'employee') then u.raw_app_meta_data ->> 'role' end as app_role,
+    coalesce(
+      nullif(btrim(u.raw_user_meta_data ->> 'display_name'), ''),
+      nullif(split_part(coalesce(u.email, ''), '@', 1), ''),
+      'user'
+    ) as base_name,
+    row_number() over (order by u.created_at, u.id) as age
+  from auth.users u
+), named as (
+  select *, row_number() over (partition by lower(base_name) order by age) as same_name
+  from ranked
+)
+insert into public.profiles (id, email, display_name, role, is_active, must_change_password)
 select
-  u.id,
-  coalesce(u.email, ''),
-  coalesce(
-    nullif(btrim(u.raw_user_meta_data ->> 'display_name'), ''),
-    nullif(split_part(coalesce(u.email, ''), '@', 1), ''),
-    'user'
-  ),
-  case when row_number() over (order by u.created_at) = 1 then 'admin' else 'employee' end,
-  row_number() over (order by u.created_at) > 1
-from auth.users u;
+  id,
+  email,
+  case when same_name = 1 then base_name else base_name || ' ' || same_name end,
+  case when age = 1 then 'admin' else coalesce(app_role, 'employee') end,
+  age = 1 or app_role is not null,
+  age > 1
+from named;
