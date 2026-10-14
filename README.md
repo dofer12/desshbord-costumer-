@@ -16,7 +16,11 @@ A Hebrew, right-to-left task journal for a service desk. One codebase, three tar
 | `npm run build` | Production web build into `dist/`. |
 | `npm run electron:dev` | Build, then open the Windows app. |
 | `npm run electron:smoke` | Open the Windows app without showing it and check that the first screen renders. |
+| `npm run demo` | Demo in the browser at http://127.0.0.1:5174: no server, no user, opens signed in as a demo admin. |
+| `npm run electron:demo` | The same demo as a Windows app window (builds into `dist-demo/`). |
 | `npm run dist:win` | Build the Windows installer into `release/`. |
 | `npm run android:sync` | Build the web app and copy it into the Android project. |
 
 The APK is built in GitHub Actions (`.github/workflows/release.yml`), not on this computer.
+
+The demo exists only in builds made with `--mode demo`. Releases are built in the default `production` mode, and `src/features/demo/demoBuild.test.ts` fails if the demo ever ends up in one.

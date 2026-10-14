@@ -4,10 +4,18 @@ import path from 'node:path'
 
 const APP_ID = 'io.github.dofer12.moked'
 const APP_TITLE = 'יומן משימות מוקד'
-const WEB_ENTRY = path.join(import.meta.dirname, '..', 'dist', 'index.html')
 
 /** Set by scripts/electron-smoke.mjs: render the first screen, report, and exit. */
 const smoke = process.env.MOKED_SMOKE_TEST === '1'
+
+/**
+ * `electron . --demo` (npm run electron:demo) opens the build made with `--mode demo`, which has
+ * no server and no user. A packaged app never honours it, and dist-demo is never packaged.
+ */
+const demo = !app.isPackaged && process.argv.includes('--demo')
+const WEB_ENTRY = path.join(import.meta.dirname, '..', demo ? 'dist-demo' : 'dist', 'index.html')
+// A demo keeps away from the real profile (stored sessions), and may run beside the real app.
+if (demo) app.setPath('userData', `${app.getPath('userData')}-demo`)
 
 let mainWindow: BrowserWindow | null = null
 
@@ -86,7 +94,7 @@ function createWindow() {
   if (smoke) void runSmokeTest(win)
 }
 
-if (!smoke && !app.requestSingleInstanceLock()) {
+if (!smoke && !demo && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {

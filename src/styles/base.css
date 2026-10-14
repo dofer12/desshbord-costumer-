@@ -172,3 +172,25 @@ input:focus-visible {
 .shell-bar h1 {
   font-size: 22px;
 }
+
+/* A demo build (npm run demo): a strip across the top, with room made for it. */
+.demo-banner {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 10;
+  padding: 4px 12px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-block-end: 1px solid var(--warn);
+}
+
+.demo-mode body {
+  padding-block-start: 30px;
+}
+
+.demo-mode .auth-screen {
+  min-height: calc(100dvh - 30px);
+}

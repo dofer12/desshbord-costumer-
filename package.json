@@ -20,6 +20,8 @@
     "electron:compile": "tsc -p electron/tsconfig.json",
     "electron:dev": "npm run build && npm run electron:compile && electron .",
     "electron:smoke": "node scripts/electron-smoke.mjs",
+    "demo": "vite --mode demo --host 127.0.0.1 --port 5174 --strictPort",
+    "electron:demo": "tsc -b && vite build --mode demo --outDir dist-demo && npm run electron:compile && electron . --demo",
     "dist:win": "npm run build && npm run electron:compile && electron-builder --win nsis --publish never",
     "android:sync": "npm run build && cap sync android"
   },
