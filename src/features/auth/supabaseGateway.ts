@@ -22,17 +22,22 @@ export function createSupabaseGateway(client: SupabaseClient): AuthGateway {
     },
 
     async signOut() {
-      const { error } = await client.auth.signOut()
+      // This device only. The default would also end the user's sessions on every other device.
+      const { error } = await client.auth.signOut({ scope: 'local' })
       if (error) throw error
     },
 
     async fetchProfile(userId) {
-      const { data, error } = await client
+      const { data, error, status } = await client
         .from('profiles')
         .select(PROFILE_COLUMNS)
         .eq('id', userId)
+        // The library would keep retrying a failed request for several seconds. The store has its
+        // own answer to an unreachable server (a retry screen), so it must hear about it at once.
+        .retry(false)
         .maybeSingle()
-      if (error) throw error
+      // The HTTP status travels with the error: it tells "server trouble" from "not allowed".
+      if (error) throw Object.assign(new Error(error.message), { code: error.code, status })
       return (data as Profile | null) ?? null
     },
 

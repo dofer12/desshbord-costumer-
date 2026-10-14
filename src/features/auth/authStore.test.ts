@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFakeGateway, DANA } from '../../test/fakeGateway'
-import { createAuthStore } from './authStore'
+import { createAuthStore, SLOW_START_MS } from './authStore'
 import { AUTH_MESSAGES } from './errors'
 
 function setup() {
@@ -70,6 +70,99 @@ describe('init', () => {
     await state().init()
     expect(state().status).toBe('signedOut')
   })
+
+  it('keeps the stored session when the profile request meets server trouble, however it is reported', async () => {
+    for (const status of [500, 502, 503]) {
+      const { fake, state } = setup()
+      fake.getStoredUserId.mockResolvedValue(DANA.id)
+      fake.fetchProfile.mockRejectedValue(Object.assign(new Error('server trouble'), { status }))
+      await state().init()
+      expect(state().status, String(status)).toBe('unreachable')
+      expect(fake.signOut, String(status)).not.toHaveBeenCalled()
+    }
+  })
+
+  it('returns to the login screen with an explanation when the server rejects the token', async () => {
+    const { fake, state } = setup()
+    fake.getStoredUserId.mockResolvedValue(DANA.id)
+    fake.fetchProfile.mockRejectedValue(Object.assign(new Error('JWT expired'), { code: 'PGRST301', status: 401 }))
+    await state().init()
+    expect(state()).toMatchObject({ status: 'signedOut', profile: null, error: AUTH_MESSAGES.sessionEnded })
+    expect(fake.signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats a missing profiles table or grant like a missing profile', async () => {
+    for (const status of [403, 404]) {
+      const { fake, state } = setup()
+      fake.getStoredUserId.mockResolvedValue(DANA.id)
+      fake.fetchProfile.mockRejectedValue(Object.assign(new Error('not set up'), { status }))
+      await state().init()
+      expect(state(), String(status)).toMatchObject({ status: 'signedOut', error: AUTH_MESSAGES.notMember })
+    }
+  })
+
+  it('shows the generic message for a failure nobody can classify', async () => {
+    const { fake, state } = setup()
+    fake.getStoredUserId.mockResolvedValue(DANA.id)
+    fake.fetchProfile.mockRejectedValue(Object.assign(new Error('bad request'), { status: 400 }))
+    await state().init()
+    expect(state()).toMatchObject({ status: 'signedOut', error: AUTH_MESSAGES.generic })
+  })
+})
+
+describe('slow start-up', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('offers a retry instead of an endless "loading" when the stored session cannot be checked in time', async () => {
+    const { fake, state } = setup()
+    let answer: (id: string | null) => void = () => {}
+    fake.getStoredUserId.mockImplementation(() => new Promise<string | null>((resolve) => (answer = resolve)))
+
+    const started = state().init()
+    await vi.advanceTimersByTimeAsync(SLOW_START_MS - 1)
+    expect(state().status).toBe('loading')
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(state().status).toBe('unreachable')
+    expect(fake.signOut).not.toHaveBeenCalled()
+
+    // The slow answer is not thrown away: the user lands in the app without pressing anything.
+    answer(DANA.id)
+    await started
+    expect(state()).toMatchObject({ status: 'signedIn', profile: DANA })
+  })
+
+  it('stays quiet when start-up finishes in time', async () => {
+    const { fake, state } = setup()
+    fake.getStoredUserId.mockResolvedValue(DANA.id)
+    await state().init()
+    await vi.advanceTimersByTimeAsync(SLOW_START_MS * 2)
+    expect(state()).toMatchObject({ status: 'signedIn', profile: DANA })
+  })
+
+  it('drops the late result of an earlier start-up once the user pressed retry', async () => {
+    const { fake, state } = setup()
+    let answerFirst: (id: string | null) => void = () => {}
+    fake.getStoredUserId.mockImplementationOnce(() => new Promise<string | null>((resolve) => (answerFirst = resolve)))
+    fake.getStoredUserId.mockResolvedValue(DANA.id)
+
+    const first = state().init()
+    await vi.advanceTimersByTimeAsync(SLOW_START_MS)
+    expect(state().status).toBe('unreachable')
+
+    await state().retry()
+    expect(state()).toMatchObject({ status: 'signedIn', profile: DANA })
+
+    // The first attempt finally answers "no session". It must not sign anyone out now.
+    answerFirst(null)
+    await first
+    expect(state()).toMatchObject({ status: 'signedIn', profile: DANA })
+  })
 })
 
 describe('retry', () => {
@@ -132,6 +225,15 @@ describe('signIn', () => {
     const { fake, state } = setup()
     await state().init()
     fake.fetchProfile.mockRejectedValue(new TypeError('Failed to fetch'))
+    await state().signIn('dana@example.com', 'secret')
+    expect(state().status).toBe('unreachable')
+    expect(fake.signOut).not.toHaveBeenCalled()
+  })
+
+  it('reports "unreachable" when the server has trouble answering right after signing in', async () => {
+    const { fake, state } = setup()
+    await state().init()
+    fake.fetchProfile.mockRejectedValue(Object.assign(new Error('server trouble'), { status: 503 }))
     await state().signIn('dana@example.com', 'secret')
     expect(state().status).toBe('unreachable')
     expect(fake.signOut).not.toHaveBeenCalled()

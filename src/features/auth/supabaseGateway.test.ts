@@ -9,8 +9,9 @@ type Listener = (event: string) => void
 function fakeClient(overrides: Record<string, unknown> = {}) {
   let listener: Listener | null = null
   const unsubscribe = vi.fn()
-  const maybeSingle = vi.fn().mockResolvedValue({ data: DANA, error: null })
-  const eq = vi.fn(() => ({ maybeSingle }))
+  const maybeSingle = vi.fn().mockResolvedValue({ data: DANA, error: null, status: 200 })
+  const retry = vi.fn(() => ({ maybeSingle }))
+  const eq = vi.fn(() => ({ retry, maybeSingle }))
   const select = vi.fn(() => ({ eq }))
   const from = vi.fn(() => ({ select }))
   const auth = {
@@ -23,7 +24,7 @@ function fakeClient(overrides: Record<string, unknown> = {}) {
     }),
   }
   const client = { auth, from, ...overrides } as unknown as SupabaseClient
-  return { client, auth, from, select, eq, maybeSingle, unsubscribe, emit: (e: string) => listener?.(e) }
+  return { client, auth, from, select, eq, retry, maybeSingle, unsubscribe, emit: (e: string) => listener?.(e) }
 }
 
 describe('getStoredUserId', () => {
@@ -77,19 +78,38 @@ describe('fetchProfile', () => {
 
   it('is null when no row is visible', async () => {
     const f = fakeClient()
-    f.maybeSingle.mockResolvedValue({ data: null, error: null })
+    f.maybeSingle.mockResolvedValue({ data: null, error: null, status: 200 })
     expect(await createSupabaseGateway(f.client).fetchProfile('u1')).toBeNull()
   })
 
-  it('rejects with the backend error', async () => {
+  it('does not retry on its own, so an unreachable server is reported at once', async () => {
     const f = fakeClient()
-    const err = { message: 'TypeError: Failed to fetch' }
-    f.maybeSingle.mockResolvedValue({ data: null, error: err })
-    await expect(createSupabaseGateway(f.client).fetchProfile('u1')).rejects.toBe(err)
+    await createSupabaseGateway(f.client).fetchProfile('u1')
+    expect(f.retry).toHaveBeenCalledWith(false)
+  })
+
+  it('rejects with the backend error and the HTTP status the store needs to classify it', async () => {
+    const f = fakeClient()
+    f.maybeSingle.mockResolvedValue({
+      data: null,
+      error: { message: 'JWT expired', code: 'PGRST301', details: '', hint: '' },
+      status: 401,
+    })
+    await expect(createSupabaseGateway(f.client).fetchProfile('u1')).rejects.toMatchObject({
+      message: 'JWT expired',
+      code: 'PGRST301',
+      status: 401,
+    })
   })
 })
 
 describe('signOut', () => {
+  it('ends only this device, not the user\'s sessions on every other device', async () => {
+    const f = fakeClient()
+    await createSupabaseGateway(f.client).signOut()
+    expect(f.auth.signOut).toHaveBeenCalledWith({ scope: 'local' })
+  })
+
   it('rejects when the backend reports an error', async () => {
     const f = fakeClient()
     f.auth.signOut.mockResolvedValue({ error: new Error('x') })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTH_MESSAGES, isNetworkError, toHebrewAuthError } from './errors'
+import { AUTH_MESSAGES, classifyProfileFailure, isNetworkError, toHebrewAuthError } from './errors'
 
 describe('toHebrewAuthError', () => {
   it('maps wrong credentials by error code', () => {
@@ -26,6 +26,12 @@ describe('toHebrewAuthError', () => {
     expect(toHebrewAuthError(new TypeError('Failed to fetch'))).toBe(AUTH_MESSAGES.offline)
   })
 
+  it('tells the owner when the account was created without confirming its email', () => {
+    expect(toHebrewAuthError({ code: 'email_not_confirmed', message: 'Email not confirmed' })).toBe(
+      AUTH_MESSAGES.emailNotConfirmed,
+    )
+  })
+
   it('falls back to a generic message and never leaks raw error text', () => {
     const msg = toHebrewAuthError({ message: 'duplicate key value violates constraint "x_pkey"' })
     expect(msg).toBe(AUTH_MESSAGES.generic)
@@ -49,5 +55,35 @@ describe('isNetworkError', () => {
     expect(isNetworkError({ message: 'permission denied for table profiles' })).toBe(false)
     expect(isNetworkError(null)).toBe(false)
     expect(isNetworkError(undefined)).toBe(false)
+  })
+})
+
+describe('classifyProfileFailure', () => {
+  it('treats a request that never got an answer as an unreachable server', () => {
+    expect(classifyProfileFailure(new TypeError('Failed to fetch'))).toBe('unreachable')
+    expect(classifyProfileFailure({ message: 'TypeError: Failed to fetch', status: 0 })).toBe('unreachable')
+    expect(classifyProfileFailure({ status: 0 })).toBe('unreachable')
+  })
+
+  it('treats server trouble as unreachable too, so a bad moment on the server never signs anyone out', () => {
+    for (const status of [500, 502, 503, 504, 520, 408, 429]) {
+      expect(classifyProfileFailure({ message: 'boom', status }), String(status)).toBe('unreachable')
+    }
+  })
+
+  it('treats a rejected token as an ended session', () => {
+    expect(classifyProfileFailure({ code: 'PGRST301', message: 'JWT expired', status: 401 })).toBe('sessionInvalid')
+  })
+
+  it('treats a missing table or a missing grant as "not set up", the same as a missing profile', () => {
+    expect(classifyProfileFailure({ code: 'PGRST205', message: "Could not find the table 'public.profiles'", status: 404 })).toBe('notSetUp')
+    expect(classifyProfileFailure({ code: '42501', message: 'permission denied for table profiles', status: 403 })).toBe('notSetUp')
+  })
+
+  it('keeps every other failure generic', () => {
+    expect(classifyProfileFailure({ message: 'bad request', status: 400 })).toBe('failed')
+    expect(classifyProfileFailure({ message: 'no status at all' })).toBe('failed')
+    expect(classifyProfileFailure(null)).toBe('failed')
+    expect(classifyProfileFailure('boom')).toBe('failed')
   })
 })
