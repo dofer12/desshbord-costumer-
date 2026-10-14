@@ -2,11 +2,18 @@ name: Release
 
 # Tag a version (git tag v0.1.0 && git push origin v0.1.0) to publish an APK and a
 # Windows installer as a GitHub Release. "Run workflow" builds the same files as
-# downloadable artifacts only (debug-signed APK), which is how the pipeline is tested.
+# downloadable artifacts only, which is how the pipeline is rehearsed: with "sign"
+# ticked it builds the APK with the release key exactly as a tag does, without it
+# the APK is debug-signed. Only a tag publishes anything.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:
+    inputs:
+      sign:
+        description: 'Sign the APK with the release key, as a tag build does (nothing is published)'
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -21,20 +28,26 @@ jobs:
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       android_version_code: ${{ steps.resolve.outputs.android_version_code }}
-      is_release: ${{ steps.mode.outputs.is_release }}
+      sign: ${{ steps.mode.outputs.sign }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
       - id: mode
-        run: echo "is_release=${{ github.ref_type == 'tag' }}" >> "$GITHUB_OUTPUT"
+        env:
+          IS_TAG: ${{ github.ref_type == 'tag' }}
+          SIGN_INPUT: ${{ inputs.sign }}
+        run: |
+          if [ "$IS_TAG" = "true" ] || [ "$SIGN_INPUT" = "true" ]; then SIGN=true; else SIGN=false; fi
+          echo "sign=$SIGN" >> "$GITHUB_OUTPUT"
       - id: resolve
         env:
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: node scripts/release-version.ts "$TAG" >> "$GITHUB_OUTPUT"
+      # Both scripts use Node alone: nothing is installed in this job. The gate runs on every
+      # run, rehearsals included, so a broken .env never reaches a build.
       - name: Check the server settings in .env
-        if: steps.mode.outputs.is_release == 'true'
         run: node scripts/check-config.ts
 
   android:
@@ -43,7 +56,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       VERSION_CODE: ${{ needs.version.outputs.android_version_code }}
-      IS_RELEASE: ${{ needs.version.outputs.is_release }}
+      SIGN: ${{ needs.version.outputs.sign }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -58,7 +71,7 @@ jobs:
       - run: npm run build
       - run: npx cap sync android
       - name: Restore the signing key
-        if: env.IS_RELEASE == 'true'
+        if: env.SIGN == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -80,7 +93,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
-          if [ "$IS_RELEASE" = "true" ]; then TASK=assembleRelease; else TASK=assembleDebug; fi
+          if [ "$SIGN" = "true" ]; then TASK=assembleRelease; else TASK=assembleDebug; fi
           ./gradlew "$TASK" --no-daemon -PmokedVersionName="$VERSION" -PmokedVersionCode="$VERSION_CODE"
       - name: Collect the APK and show who signed it
         run: |
