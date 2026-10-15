@@ -29,6 +29,11 @@ export interface AuthActions {
   signOut(): Promise<void>
   /** Re-runs start-up after the server was unreachable. */
   retry(): Promise<void>
+  /**
+   * Looks at the profile of the signed-in user again. A user who was deactivated, or whose profile
+   * is gone, is signed out with an explanation; a server that cannot be reached changes nothing.
+   */
+  recheck(): Promise<void>
   /** Stops listening to the backend. */
   dispose(): void
 }
@@ -39,10 +44,13 @@ export function createAuthStore(gateway: AuthGateway): AuthStore {
   let unsubscribe: (() => void) | null = null
   /** Numbers the start-ups, so the late answer of an abandoned one cannot overwrite a newer state. */
   let startups = 0
+  /** Numbers the sessions, so that the late answer of a re-check cannot touch a later one. */
+  let sessions = 0
 
   return createStore<AuthState & AuthActions>()((set, get) => {
     /** Drops the local session first, so a late "signed out" event is recognised as our own. */
     async function endSession(message: string | null) {
+      sessions++
       set({ status: 'signedOut', profile: null, error: message })
       try {
         await gateway.signOut()
@@ -63,6 +71,7 @@ export function createAuthStore(gateway: AuthGateway): AuthStore {
           await endSession(AUTH_MESSAGES.notMember)
           return false
         }
+        sessions++
         set({ status: 'signedIn', profile, error: null })
         return true
       } catch (err) {
@@ -140,6 +149,35 @@ export function createAuthStore(gateway: AuthGateway): AuthStore {
       async retry() {
         set({ status: 'loading' })
         await get().init()
+      },
+
+      async recheck() {
+        const { status, profile: current } = get()
+        if (status !== 'signedIn' || !current) return
+        const session = sessions
+        try {
+          const profile = await gateway.fetchProfile(current.id)
+          if (session !== sessions) return
+          if (!profile || !profile.is_active) {
+            await endSession(AUTH_MESSAGES.notMember)
+            return
+          }
+          set({ profile })
+        } catch (err) {
+          if (session !== sessions) return
+          // Only a clear "no" from the server ends the session. Trouble in reaching it, or a failure
+          // that nobody can classify, changes nothing: the check is made again at the next moment.
+          switch (classifyProfileFailure(err)) {
+            case 'sessionInvalid':
+              await endSession(AUTH_MESSAGES.sessionEnded)
+              break
+            case 'notSetUp':
+              await endSession(AUTH_MESSAGES.notMember)
+              break
+            default:
+              break
+          }
+        }
       },
 
       dispose() {

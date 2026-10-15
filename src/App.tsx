@@ -1,7 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { LoginPage } from './features/auth/LoginPage'
 import { AuthShell, RequireAuth } from './features/auth/routes'
-import { HomePage } from './features/home/HomePage'
+import { AppShell } from './features/shell/AppShell'
+import { TaskCardRoute } from './features/tasks/TaskCardRoute'
+import { TasksPage } from './features/tasks/TasksPage'
+import { TasksProvider } from './features/tasks/TasksProvider'
 
 export function App({ serverHost }: { serverHost: string }) {
   return (
@@ -9,7 +12,18 @@ export function App({ serverHost }: { serverHost: string }) {
       <Route element={<AuthShell />}>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
-          <Route index element={<HomePage serverHost={serverHost} />} />
+          <Route
+            element={
+              <TasksProvider>
+                <AppShell serverHost={serverHost} />
+              </TasksProvider>
+            }
+          >
+            <Route index element={<Navigate to="/tasks" replace />} />
+            <Route path="tasks" element={<TasksPage />} />
+            <Route path="tasks/new" element={<TaskCardRoute />} />
+            <Route path="tasks/:id" element={<TaskCardRoute />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

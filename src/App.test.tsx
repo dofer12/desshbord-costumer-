@@ -1,9 +1,16 @@
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AUTH_MESSAGES } from './features/auth/errors'
-import { DANA } from './test/fakeGateway'
+import { DANA, type FakeGateway } from './test/fakeGateway'
 import { renderApp } from './test/renderApp'
+
+/** The frame of the app. It is there only while somebody is signed in (the login screen has no tabs). */
+const findSignedInApp = () => screen.findByRole('navigation', { name: 'ניווט ראשי' })
+
+function signedInAsDana(fake: FakeGateway) {
+  fake.getStoredUserId.mockResolvedValue(DANA.id)
+}
 
 describe('App routing', () => {
   it('shows a loading screen until start-up has settled', () => {
@@ -16,11 +23,20 @@ describe('App routing', () => {
     const { ready } = renderApp({ path: '/' })
     await ready
     expect(await screen.findByRole('button', { name: 'כניסה' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'ניווט ראשי' })).not.toBeInTheDocument()
   })
 
-  it('redirects unknown routes to the home screen', async () => {
-    renderApp({ path: '/nope', configure: (fake) => fake.getStoredUserId.mockResolvedValue(DANA.id) })
-    expect(await screen.findByRole('heading', { name: 'שלום, דנה' })).toBeInTheDocument()
+  it('sends a signed-in user from the home route to the tasks screen', async () => {
+    renderApp({ path: '/', configure: signedInAsDana })
+    await findSignedInApp()
+    expect(screen.getByRole('link', { name: 'משימות' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('heading', { level: 2, name: 'משימות' })).toBeInTheDocument()
+  })
+
+  it('redirects unknown routes to the tasks screen', async () => {
+    renderApp({ path: '/nope', configure: signedInAsDana })
+    await findSignedInApp()
+    expect(screen.getByRole('link', { name: 'משימות' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('keeps the stored session when the server cannot be reached, and recovers on retry', async () => {
@@ -35,12 +51,12 @@ describe('App routing', () => {
     expect(fake.signOut).not.toHaveBeenCalled()
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'נסו שוב' }))
-    expect(await screen.findByRole('heading', { name: 'שלום, דנה' })).toBeInTheDocument()
+    await findSignedInApp()
   })
 
   it('returns to the login screen with a message when the server ends the session', async () => {
-    const { fake } = renderApp({ configure: (f) => f.getStoredUserId.mockResolvedValue(DANA.id) })
-    await screen.findByRole('heading', { name: 'שלום, דנה' })
+    const { fake } = renderApp({ configure: signedInAsDana })
+    await findSignedInApp()
 
     act(() => fake.endSessionFromServer())
 
@@ -56,5 +72,29 @@ describe('App routing', () => {
       },
     })
     expect(await screen.findByRole('alert')).toHaveTextContent(AUTH_MESSAGES.notMember)
+  })
+})
+
+describe('the tasks of the signed-in user', () => {
+  it('are loaded once the user is in, and listened to', async () => {
+    const { backend } = renderApp({ configure: signedInAsDana })
+    await findSignedInApp()
+    await vi.waitFor(() => expect(backend.tasks.calls.loadInitial).toBe(1))
+    expect(backend.tasks.subscribers).toBe(1)
+  })
+
+  it('are let go when the user signs out from the menu, and the login screen has no error', async () => {
+    const { fake, backend } = renderApp({ configure: signedInAsDana })
+    await findSignedInApp()
+    await vi.waitFor(() => expect(backend.tasks.subscribers).toBe(1))
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: DANA.display_name }))
+    await user.click(screen.getByRole('button', { name: 'התנתקות' }))
+
+    expect(await screen.findByRole('button', { name: 'כניסה' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(fake.signOut).toHaveBeenCalledTimes(1)
+    expect(backend.tasks.subscribers).toBe(0)
   })
 })

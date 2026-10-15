@@ -5,26 +5,19 @@ import type {
   DirectoryGateway,
   Settings,
   Status,
-  TaskChangeEvent,
   TaskEvent,
   TasksGateway,
 } from '../features/tasks/gateways'
-import { DEFAULT_SHIP_METHODS, SERVER_OWNED_FIELDS, newTask, type Task, type TaskPatch } from '../features/tasks/model'
-import { normalizeQuery, phoneNeedle } from '../features/tasks/search'
+import { createMemoryAttachments, createMemoryDirectory, createMemoryTasks } from '../features/tasks/memoryGateways'
+import type { Task, TaskPatch } from '../features/tasks/model'
 import { DANA, OWNER } from './fakeGateway'
 
-// In-memory stand-ins for the three gateways. They keep the rows of a pretend server and behave
-// like the real one where the stores can tell the difference: an upsert merges the fields of the
-// patch into the row with the same id, the server stamps the time and `done_by`, and a call can
-// fail the way a real one does. supabaseGateways.contract.test.ts pins the real gateways.
+// Stand-ins for the three gateways, for the tests of the stores. They are the in-memory gateways of
+// the app (memoryGateways.ts: a pretend server that behaves like the database where the stores can
+// tell the difference), with what a test needs added: a log of the calls, and failures on demand.
+// supabaseGateways.contract.test.ts pins the real gateways.
 
 const clone = <T>(value: T): T => structuredClone(value)
-
-function cleanPatch(patch: TaskPatch): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(patch).filter(([field, value]) => value !== undefined && !SERVER_OWNED_FIELDS.has(field)),
-  )
-}
 
 /** What a failed call looks like when the server cannot be reached. */
 export function networkError(): Error {
@@ -80,13 +73,9 @@ export interface FakeTasks {
 }
 
 export function createFakeTasks(options: { userId?: string; now?: () => Date; tasks?: Task[] } = {}): FakeTasks {
-  const userId = options.userId ?? DANA.id
-  const now = options.now ?? (() => new Date())
-  const rows = new Map<string, Task>((options.tasks ?? []).map((task) => [task.id, clone(task)]))
+  const memory = createMemoryTasks({ userId: options.userId ?? DANA.id, now: options.now, tasks: options.tasks })
   const upserts: FakeTasks['upserts'] = []
-  const events: TaskEvent[] = []
   const calls = { loadInitial: 0, search: 0, upsert: 0, loadHistory: 0 }
-  const listeners = new Set<{ onEvent: (event: TaskChangeEvent) => void; onState: (live: boolean) => void }>()
   const failures = createFailures()
   let answerLost = false
 
@@ -94,82 +83,43 @@ export function createFakeTasks(options: { userId?: string; now?: () => Date; ta
     async loadInitial(at) {
       calls.loadInitial++
       failures.check()
-      const since = at.getTime() - 30 * 86_400_000
-      return [...rows.values()]
-        .filter((t) => t.deleted_at === null && (t.done_at === null || Date.parse(t.done_at) >= since))
-        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
-        .map(clone)
+      return memory.gateway.loadInitial(at)
     },
-
     async search(query) {
       calls.search++
       failures.check()
-      const text = normalizeQuery(query).toLowerCase()
-      if (!text) return []
-      const digits = phoneNeedle(query)
-      return [...rows.values()]
-        .filter((t) => t.deleted_at === null)
-        .filter(
-          (t) =>
-            [t.title, t.customer_name, t.order_number, t.service_call_number, t.glassix_conversation_id, t.cargo_number, t.product_sku].some(
-              (value) => value.toLowerCase().includes(text),
-            ) || (digits !== null && t.customer_phone_digits.includes(digits)),
-        )
-        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-        .slice(0, 200)
-        .map(clone)
+      return memory.gateway.search(query)
     },
-
     async upsert(id, patch) {
       calls.upsert++
       failures.check()
-      const existing = rows.get(id)
-      const row: Task = { ...(existing ?? newTask(userId, id)), ...cleanPatch(patch) }
-      row.updated_at = now().toISOString()
-      // What the triggers of the database do.
-      if (row.done_at === null) row.done_by = null
-      else if (!existing || existing.done_at === null) row.done_by = userId
-      row.customer_phone_digits = row.customer_phone.replace(/\D/g, '')
-      rows.set(id, row)
+      const row = await memory.gateway.upsert(id, patch)
       upserts.push({ id, patch: clone(patch) })
       if (answerLost) {
         answerLost = false
         throw networkError()
       }
-      return clone(row)
+      return row
     },
-
-    subscribe(onEvent, onState) {
-      const listener = { onEvent, onState }
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
-
+    subscribe: memory.gateway.subscribe,
     async loadHistory(taskId) {
       calls.loadHistory++
       failures.check()
-      return events.filter((event) => event.task_id === taskId).sort((a, b) => b.id - a.id).map(clone)
+      return memory.gateway.loadHistory(taskId)
     },
   }
 
   return {
     gateway,
-    rows,
+    rows: memory.rows,
     upserts,
-    events,
+    events: memory.events,
     calls,
     get subscribers() {
-      return listeners.size
+      return memory.subscribers
     },
-    pushRemote(task) {
-      rows.set(task.id, clone(task))
-      for (const listener of [...listeners]) listener.onEvent({ type: 'upsert', task: clone(task) })
-    },
-    setLive(live) {
-      for (const listener of [...listeners]) listener.onState(live)
-    },
+    pushRemote: memory.push,
+    setLive: memory.setLive,
     failNext: failures.failNext,
     loseNextAnswer() {
       answerLost = true
@@ -191,7 +141,9 @@ export interface FakeDirectory {
   profiles: Profile[]
   settings: Settings
   /** How many times the directory was loaded. */
-  loads: number
+  readonly loads: number
+  /** How many subscribers are listening. */
+  readonly subscribers: number
   /** Tells the subscribers that a status, a setting or a profile changed. */
   changed(): void
   failNext(error: unknown): void
@@ -199,94 +151,92 @@ export interface FakeDirectory {
 }
 
 export function createFakeDirectory(): FakeDirectory {
+  const memory = createMemoryDirectory({
+    statuses: FAKE_STATUSES,
+    profiles: [OWNER, DANA],
+    settings: { glassix_url_template: 'https://glassix.example/conversations/{id}' },
+  })
   const failures = createFailures()
-  const listeners = new Set<() => void>()
-  const directory: FakeDirectory = {
-    statuses: clone(FAKE_STATUSES),
-    profiles: [clone(OWNER), clone(DANA)],
-    settings: {
-      glassix_url_template: 'https://glassix.example/conversations/{id}',
-      ship_methods: [...DEFAULT_SHIP_METHODS],
-      last_backup_at: null,
-    },
-    loads: 0,
+  return {
     gateway: {
       async load() {
-        directory.loads++
         failures.check()
-        return {
-          statuses: clone(directory.statuses),
-          profiles: clone(directory.profiles),
-          settings: clone(directory.settings),
-        }
+        return memory.gateway.load()
       },
-      subscribe(onChange) {
-        listeners.add(onChange)
-        return () => {
-          listeners.delete(onChange)
-        }
-      },
+      subscribe: memory.gateway.subscribe,
     },
-    changed() {
-      for (const listener of [...listeners]) listener()
+    get statuses() {
+      return memory.statuses
     },
+    set statuses(value) {
+      memory.statuses = value
+    },
+    get profiles() {
+      return memory.profiles
+    },
+    set profiles(value) {
+      memory.profiles = value
+    },
+    get settings() {
+      return memory.settings
+    },
+    set settings(value) {
+      memory.settings = value
+    },
+    get subscribers() {
+      return memory.subscribers
+    },
+    get loads() {
+      return memory.loads
+    },
+    changed: memory.changed,
     failNext: failures.failNext,
     setOffline: failures.setOffline,
   }
-  return directory
 }
 
 export interface FakeAttachments {
   gateway: AttachmentsGateway
-  items: Attachment[]
+  readonly items: Attachment[]
   /** The paths of the files that went away with their attachments. */
-  removedFiles: string[]
+  readonly removedFiles: string[]
   failNext(error: unknown): void
   setOffline(offline: boolean): void
 }
 
 export function createFakeAttachments(options: { userId?: string } = {}): FakeAttachments {
-  const userId = options.userId ?? DANA.id
-  const failures = createFailures()
   let counter = 0
-  const fake: FakeAttachments = {
-    items: [],
-    removedFiles: [],
+  const memory = createMemoryAttachments({
+    userId: options.userId ?? DANA.id,
+    newId: () => `attachment-${++counter}`,
+  })
+  const failures = createFailures()
+  return {
     gateway: {
       async list(taskId) {
         failures.check()
-        return fake.items.filter((item) => item.task_id === taskId).map(clone)
+        return memory.gateway.list(taskId)
       },
-      async add(taskId, { full, kind, width, height }) {
+      async add(taskId, files) {
         failures.check()
-        const id = `attachment-${++counter}`
-        const attachment: Attachment = {
-          id,
-          task_id: taskId,
-          storage_path: `${taskId}/${id}.jpg`,
-          thumb_path: `${taskId}/${id}_t.jpg`,
-          kind,
-          width,
-          height,
-          bytes: full.size,
-          uploaded_by: userId,
-          created_at: new Date().toISOString(),
-        }
-        fake.items.push(attachment)
-        return clone(attachment)
+        return memory.gateway.add(taskId, files)
       },
       async remove(attachment) {
         failures.check()
-        fake.items = fake.items.filter((item) => item.id !== attachment.id)
-        fake.removedFiles.push(attachment.storage_path, attachment.thumb_path)
+        return memory.gateway.remove(attachment)
       },
       async signedUrl(path) {
         failures.check()
-        return `https://files.example/${path}?token=fake`
+        return memory.gateway.signedUrl(path)
       },
+    },
+    get items() {
+      return memory.items
+    },
+    get removedFiles() {
+      return memory.removedFiles
     },
     failNext: failures.failNext,
     setOffline: failures.setOffline,
   }
-  return fake
 }

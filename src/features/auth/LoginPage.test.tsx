@@ -5,6 +5,9 @@ import { DANA, type FakeGateway } from '../../test/fakeGateway'
 import { renderApp } from '../../test/renderApp'
 import { AUTH_MESSAGES } from './errors'
 
+/** The frame of the app: it is there only once somebody is signed in. */
+const findSignedInApp = () => screen.findByRole('navigation', { name: 'ניווט ראשי' })
+
 async function openLogin(configure?: (fake: FakeGateway) => void) {
   const app = renderApp({ path: '/login', configure })
   await app.ready
@@ -54,11 +57,11 @@ describe('LoginPage', () => {
     expect(fake.signIn).not.toHaveBeenCalled()
   })
 
-  it('signs in with a normalised email when Enter is pressed, then shows the home screen', async () => {
+  it('signs in with a normalised email when Enter is pressed, then shows the app', async () => {
     const { fake, user } = await openLogin()
     await user.type(screen.getByLabelText('אימייל'), '  Dana@Example.com ')
     await user.type(screen.getByLabelText('סיסמה'), 'secret{Enter}')
-    expect(await screen.findByRole('heading', { name: 'שלום, דנה' })).toBeInTheDocument()
+    expect(await findSignedInApp()).toBeInTheDocument()
     expect(fake.signIn).toHaveBeenCalledWith('dana@example.com', 'secret')
   })
 
@@ -83,12 +86,12 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('button', { name: 'מתחבר…' })).toBeDisabled()
 
     release(DANA.id)
-    await screen.findByRole('heading', { name: 'שלום, דנה' })
+    await findSignedInApp()
     expect(fake.signIn).toHaveBeenCalledTimes(1)
   })
 
-  it('sends a visitor with a stored session straight to the home screen', async () => {
+  it('sends a visitor with a stored session straight into the app', async () => {
     renderApp({ path: '/login', configure: (fake) => fake.getStoredUserId.mockResolvedValue(DANA.id) })
-    expect(await screen.findByRole('heading', { name: 'שלום, דנה' })).toBeInTheDocument()
+    expect(await findSignedInApp()).toBeInTheDocument()
   })
 })

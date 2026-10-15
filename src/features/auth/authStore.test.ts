@@ -324,3 +324,96 @@ describe('dispose', () => {
     expect(state().status).toBe('signedIn')
   })
 })
+
+describe('recheck', () => {
+  async function signedIn() {
+    const t = setup()
+    t.fake.getStoredUserId.mockResolvedValue(DANA.id)
+    await t.state().init()
+    expect(t.state().status).toBe('signedIn')
+    t.fake.fetchProfile.mockClear()
+    return t
+  }
+  const failure = (status: number) => Object.assign(new Error(`status ${status}`), { status })
+
+  it('asks for the profile of the signed-in user and keeps what it learns', async () => {
+    const t = await signedIn()
+    t.fake.fetchProfile.mockResolvedValue({ ...DANA, display_name: 'דנה כהן', role: 'admin' })
+    await t.state().recheck()
+    expect(t.fake.fetchProfile).toHaveBeenCalledWith(DANA.id)
+    expect(t.state()).toMatchObject({ status: 'signedIn', profile: { display_name: 'דנה כהן', role: 'admin' } })
+  })
+
+  it('signs the user out, and says why, when the profile has been deactivated', async () => {
+    const t = await signedIn()
+    t.fake.fetchProfile.mockResolvedValue({ ...DANA, is_active: false })
+    await t.state().recheck()
+    expect(t.state()).toMatchObject({ status: 'signedOut', profile: null, error: AUTH_MESSAGES.notMember })
+    expect(t.fake.signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('does the same when the profile is gone', async () => {
+    const t = await signedIn()
+    t.fake.fetchProfile.mockResolvedValue(null)
+    await t.state().recheck()
+    expect(t.state()).toMatchObject({ status: 'signedOut', error: AUTH_MESSAGES.notMember })
+  })
+
+  it('treats a missing table or grant like a missing profile', async () => {
+    for (const status of [403, 404]) {
+      const t = await signedIn()
+      t.fake.fetchProfile.mockRejectedValue(failure(status))
+      await t.state().recheck()
+      expect(t.state(), String(status)).toMatchObject({ status: 'signedOut', error: AUTH_MESSAGES.notMember })
+    }
+  })
+
+  it('signs the user out with "the session ended" when the server rejects the token', async () => {
+    const t = await signedIn()
+    t.fake.fetchProfile.mockRejectedValue(failure(401))
+    await t.state().recheck()
+    expect(t.state()).toMatchObject({ status: 'signedOut', error: AUTH_MESSAGES.sessionEnded })
+  })
+
+  it('changes nothing when the server cannot be reached, or has trouble, or fails in a way nobody can classify', async () => {
+    for (const error of [new TypeError('Failed to fetch'), failure(0), failure(503), failure(400)]) {
+      const t = await signedIn()
+      t.fake.fetchProfile.mockRejectedValue(error)
+      await t.state().recheck()
+      expect(t.state(), String(error)).toMatchObject({ status: 'signedIn', profile: DANA })
+      expect(t.fake.signOut).not.toHaveBeenCalled()
+    }
+  })
+
+  it('does nothing when nobody is signed in', async () => {
+    const t = setup()
+    await t.state().init()
+    await t.state().recheck()
+    expect(t.fake.fetchProfile).not.toHaveBeenCalled()
+    expect(t.state().status).toBe('signedOut')
+  })
+
+  it('does not bring back a user who signed out while the answer was on its way', async () => {
+    const t = await signedIn()
+    let answer: (profile: typeof DANA) => void = () => undefined
+    t.fake.fetchProfile.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const checking = t.state().recheck()
+    await t.state().signOut()
+    answer(DANA)
+    await checking
+    expect(t.state()).toMatchObject({ status: 'signedOut', profile: null })
+  })
+
+  it('does not sign out a user who signed in again while the answer was on its way', async () => {
+    const t = await signedIn()
+    let answer: (profile: null) => void = () => undefined
+    t.fake.fetchProfile.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    const checking = t.state().recheck()
+    await t.state().signOut()
+    t.fake.fetchProfile.mockResolvedValue(DANA)
+    await t.state().signIn('dana@example.com', 'secret-pass')
+    answer(null) // the old answer says "no profile"
+    await checking
+    expect(t.state()).toMatchObject({ status: 'signedIn', profile: DANA })
+  })
+})
