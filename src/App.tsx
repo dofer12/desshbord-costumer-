@@ -20,9 +20,11 @@ export function App({ serverHost }: { serverHost: string }) {
             }
           >
             <Route index element={<Navigate to="/tasks" replace />} />
-            <Route path="tasks" element={<TasksPage />} />
-            <Route path="tasks/new" element={<TaskCardRoute />} />
-            <Route path="tasks/:id" element={<TaskCardRoute />} />
+            {/* The card of a task opens beside the list, so that the list keeps its filters and its place. */}
+            <Route path="tasks" element={<TasksPage />}>
+              <Route path="new" element={<TaskCardRoute />} />
+              <Route path=":id" element={<TaskCardRoute />} />
+            </Route>
           </Route>
         </Route>
       </Route>

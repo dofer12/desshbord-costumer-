@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { newTask, type Task } from './model'
-import { filterTasks, paginate, sortTasks, statusCounts, type TaskFilter } from './selectors'
+import { filterTasks, isOverdue, paginate, sortByChoice, sortTasks, statusCounts, type SortChoice, type TaskFilter } from './selectors'
 
 const ME = 'user-me'
 
@@ -212,5 +212,47 @@ describe('paginate', () => {
   it('takes another page size', () => {
     expect(paginate(items, 2, 10)).toMatchObject({ page: 2, pageCount: 25 })
     expect(paginate(items, 2, 10).items[0]).toBe(10)
+  })
+})
+
+describe('isOverdue', () => {
+  const now = new Date('2026-10-15T12:00:00.000Z')
+
+  it('is true for an open task whose time has passed', () => {
+    expect(isOverdue(task('a', { due_at: '2026-10-15T11:59:59.000Z' }), now)).toBe(true)
+    expect(isOverdue(task('a', { due_at: '2025-01-01T00:00:00.000Z' }), now)).toBe(true)
+  })
+
+  it('is false for a task that is not due yet, that is due this very moment, or that has no time', () => {
+    expect(isOverdue(task('a', { due_at: '2026-10-15T12:00:01.000Z' }), now)).toBe(false)
+    expect(isOverdue(task('a', { due_at: '2026-10-15T12:00:00.000Z' }), now)).toBe(false)
+    expect(isOverdue(task('a', { due_at: null }), now)).toBe(false)
+  })
+
+  it('is false for a task that is done, however late it was', () => {
+    expect(isOverdue(task('a', { due_at: '2026-10-01T00:00:00.000Z', done_at: '2026-10-02T00:00:00.000Z' }), now)).toBe(false)
+  })
+})
+
+describe('sortByChoice', () => {
+  const list = [
+    task('a', { title: 'ב', due_at: '2026-10-16T06:00:00.000Z', updated_at: '2026-10-10T00:00:00.000Z' }),
+    task('b', { title: 'א', due_at: '2026-10-15T06:00:00.000Z', updated_at: '2026-10-12T00:00:00.000Z' }),
+    task('c', { title: 'ג', due_at: null, updated_at: '2026-10-11T00:00:00.000Z' }),
+  ]
+  const order = (choice: SortChoice) => ids(sortByChoice(list, choice))
+
+  it('puts each choice in its order', () => {
+    expect(order('due-asc')).toEqual(['b', 'a', 'c'])
+    expect(order('due-desc')).toEqual(['a', 'b', 'c'])
+    expect(order('title-asc')).toEqual(['b', 'a', 'c'])
+    expect(order('updated-desc')).toEqual(['b', 'c', 'a'])
+    expect(order('updated-asc')).toEqual(['a', 'c', 'b'])
+  })
+
+  it('does not change the list that it is given', () => {
+    const before = ids(list)
+    sortByChoice(list, 'updated-asc')
+    expect(ids(list)).toEqual(before)
   })
 })

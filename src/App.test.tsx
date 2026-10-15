@@ -29,14 +29,14 @@ describe('App routing', () => {
   it('sends a signed-in user from the home route to the tasks screen', async () => {
     renderApp({ path: '/', configure: signedInAsDana })
     await findSignedInApp()
-    expect(screen.getByRole('link', { name: 'משימות' })).toHaveAttribute('aria-current', 'page')
+    expect(await screen.findByRole('link', { name: 'משימות', current: 'page' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'משימות' })).toBeInTheDocument()
   })
 
   it('redirects unknown routes to the tasks screen', async () => {
     renderApp({ path: '/nope', configure: signedInAsDana })
     await findSignedInApp()
-    expect(screen.getByRole('link', { name: 'משימות' })).toHaveAttribute('aria-current', 'page')
+    expect(await screen.findByRole('link', { name: 'משימות', current: 'page' })).toBeInTheDocument()
   })
 
   it('keeps the stored session when the server cannot be reached, and recovers on retry', async () => {

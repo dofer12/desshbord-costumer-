@@ -301,6 +301,393 @@ a:focus-visible {
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.14);
 }
 
+/* The tasks screen: the search, the chips and the filters, then a table or cards, then the pages. */
+.tasks-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-head h2 {
+  font-size: 20px;
+}
+
+a.btn {
+  text-decoration: none;
+}
+
+.search {
+  display: flex;
+  gap: 8px;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  font-size: 16px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  color: var(--accent-fg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.chip .dot {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgb(0 0 0 / 0.25);
+  border-radius: 50%;
+}
+
+.chip .count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.control select {
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.control select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.seg button {
+  padding: 7px 12px;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 0;
+  cursor: pointer;
+}
+
+.seg button + button {
+  border-inline-start: 1px solid var(--line);
+}
+
+.seg button[aria-pressed='true'] {
+  color: var(--accent-fg);
+  background: var(--accent);
+}
+
+.seg button:disabled,
+.control select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.found-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  border-radius: var(--r);
+}
+
+.result-count {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.alert .btn {
+  margin-inline-start: 12px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.task-table th {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: start;
+  white-space: nowrap;
+  background: var(--sunken);
+}
+
+.task-table td {
+  padding: 8px 10px;
+  vertical-align: top;
+  border-block-start: 1px solid var(--line);
+}
+
+.task-table tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.task-table .title-cell {
+  min-width: 180px;
+}
+
+.done-box {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.title-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.title-link {
+  font-weight: 500;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.title-link:hover {
+  text-decoration: underline;
+}
+
+.title-link.is-done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.badge {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--muted);
+  background: var(--sunken);
+  border-radius: 4px;
+}
+
+.badge.priority-high {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.badge.priority-urgent,
+.badge.late {
+  font-weight: 600;
+  color: var(--crit);
+  background: var(--crit-soft);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.due time {
+  white-space: nowrap;
+}
+
+.due.is-late time {
+  font-weight: 600;
+  color: var(--crit);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.customer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dial {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  color: var(--accent);
+}
+
+.copy {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.copy-btn {
+  padding: 0 2px;
+  font-size: inherit;
+  white-space: nowrap;
+  color: inherit;
+  cursor: copy;
+  background: none;
+  border: 0;
+  border-block-end: 1px dotted var(--muted);
+}
+
+.copy-btn:hover {
+  color: var(--accent);
+}
+
+.copy-note {
+  position: absolute;
+  inset-block-end: calc(100% + 2px);
+  inset-inline-start: 0;
+  z-index: 2;
+  padding: 1px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+.copy-note.copy-failed {
+  color: var(--crit);
+  background: var(--crit-soft);
+  border: 1px solid var(--crit);
+}
+
+.task-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.task-card .done-box {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.card-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.card-foot {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
 /* A demo build (npm run demo): a strip across the top, with room made for it. */
 .demo-banner {
   position: fixed;

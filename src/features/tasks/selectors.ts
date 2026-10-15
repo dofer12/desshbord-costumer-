@@ -51,6 +51,8 @@ export function filterTasks(tasks: Task[], filter: TaskFilter, meId: string): Ta
 
 export type SortKey = 'due' | 'title' | 'updated'
 export type SortDirection = 'asc' | 'desc'
+/** The orders that the screen offers, each a key and a direction: 'due-asc' is the nearest date first. */
+export type SortChoice = 'due-asc' | 'due-desc' | 'title-asc' | 'updated-desc' | 'updated-asc'
 
 const dueMs = (task: Task) => (task.due_at === null ? null : Date.parse(task.due_at))
 
@@ -79,6 +81,17 @@ export function sortTasks(tasks: Task[], key: SortKey, direction: SortDirection)
     }
     return result || a.id.localeCompare(b.id)
   })
+}
+
+/** The tasks in the order of one of the choices of the screen. */
+export function sortByChoice(tasks: Task[], choice: SortChoice): Task[] {
+  const [key, direction] = choice.split('-') as [SortKey, SortDirection]
+  return sortTasks(tasks, key, direction)
+}
+
+/** An open task whose time has passed. */
+export function isOverdue(task: Task, now: Date): boolean {
+  return task.due_at !== null && task.done_at === null && Date.parse(task.due_at) < now.getTime()
 }
 
 /** How many of the tasks have each status. */
