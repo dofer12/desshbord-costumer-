@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { afterEach } from 'vitest'
 
 const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'migrations')
 
@@ -54,12 +55,20 @@ grant all on table storage.objects to anon, authenticated;
 create publication supabase_realtime;
 `
 
+// Every test starts its own Postgres, which is a WebAssembly instance of some size. They are closed
+// after each test, so that a long run does not keep hundreds of them alive.
+const open: PGlite[] = []
+afterEach(async () => {
+  await Promise.all(open.splice(0).map((db) => db.close().catch(() => undefined)))
+})
+
 /**
  * A fresh in-memory Postgres with the Supabase stub and every migration applied.
  * `seed` runs before the migrations, to model data that existed beforehand.
  */
 export async function createDb(seed?: (db: PGlite) => Promise<void>): Promise<PGlite> {
   const db = new PGlite()
+  open.push(db)
   await db.exec(SUPABASE_STUB)
   await seed?.(db)
   const files = readdirSync(MIGRATIONS_DIR)
