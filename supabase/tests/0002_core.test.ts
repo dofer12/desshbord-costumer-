@@ -251,3 +251,183 @@ describe('legacy_id', () => {
     await expect(insertTask({ legacy_id: 'L-100' })).rejects.toThrow(/duplicate key/i)
   })
 })
+
+describe('touch: updated_at, the protected columns and done_by', () => {
+  async function update(taskId: unknown, set: string, params: unknown[] = [], by = owner) {
+    const result = await asUid(by, () =>
+      db.query<Record<string, unknown>>(`update public.tasks set ${set} where id = $1 returning *`, [taskId, ...params]),
+    )
+    return result.rows[0]
+  }
+
+  it('moves updated_at forward on every update', async () => {
+    const task = await insertTask()
+    // The database clock may tick in milliseconds, so wait for it to move.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const after = await update(task.id, `title = 'x'`)
+    expect((after.updated_at as Date).getTime()).toBeGreaterThan((task.updated_at as Date).getTime())
+  })
+
+  it('keeps the id, the author and the creation time whatever an update sends', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const task = await insertTask()
+    const after = await update(task.id, `id = gen_random_uuid(), created_by = $2, created_at = '2000-01-01'`, [dana])
+    expect(after.id).toBe(task.id)
+    expect(after.created_by).toBe(owner)
+    expect(after.created_at).toEqual(task.created_at)
+  })
+
+  it('records the caller as done_by when a task is marked done, and clears it when it is reopened', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const task = await insertTask()
+    expect(await update(task.id, `done_at = now()`, [], dana)).toMatchObject({ done_by: dana })
+    expect(await update(task.id, `done_at = null`, [], dana)).toMatchObject({ done_at: null, done_by: null })
+  })
+
+  it('ignores a done_by that the caller sends, and leaves it alone when someone else edits a done task', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const task = await insertTask()
+    const done = await update(task.id, `done_at = now(), done_by = $2`, [owner], dana)
+    expect(done.done_by).toBe(dana)
+    const edited = await update(task.id, `notes = 'later'`, [], owner)
+    expect(edited.done_by).toBe(dana)
+  })
+
+  it('sets done_by on a task that is created already done, whatever the caller sends', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const done = await insertTask({ done_at: new Date().toISOString(), done_by: dana })
+    expect(done.done_by).toBe(owner)
+    const open = await insertTask({ done_by: dana })
+    expect(open.done_by).toBeNull()
+  })
+
+  it('stamps updated_at itself, also on a new task, so a device cannot hide a change by back-dating it', async () => {
+    const task = await insertTask({ updated_at: '2000-01-01T00:00:00Z' })
+    expect((task.updated_at as Date).getTime()).toBeGreaterThan(Date.parse('2020-01-01'))
+  })
+
+  it('lets the name of a removed person go from the tasks they completed, and keeps the completion', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const task = await insertTask()
+    await update(task.id, `done_at = now()`, [], dana)
+    await db.query('delete from auth.users where id = $1', [dana])
+    const r = await db.query<{ done_at: Date | null; done_by: string | null }>(
+      'select done_at, done_by from public.tasks where id = $1',
+      [task.id],
+    )
+    expect(r.rows[0].done_by).toBeNull()
+    expect(r.rows[0].done_at).toBeInstanceOf(Date)
+  })
+})
+
+describe('history: every change is recorded by the server', () => {
+  async function events(taskId: unknown) {
+    const r = await db.query<{ type: string; changes: Record<string, unknown[]>; actor_id: string | null }>(
+      'select type, changes, actor_id from public.task_events where task_id = $1 order by id',
+      [taskId],
+    )
+    return r.rows
+  }
+  async function change(taskId: unknown, set: string, params: unknown[] = [], by = owner) {
+    await asUid(by, () => db.query(`update public.tasks set ${set} where id = $1`, [taskId, ...params]))
+  }
+
+  it('writes one "created" event when a task is created, by the creator', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const task = await insertTask({}, dana)
+    expect(await events(task.id)).toEqual([{ type: 'created', changes: {}, actor_id: dana }])
+  })
+
+  it('writes one "updated" event with the old and the new value of each changed field', async () => {
+    const task = await insertTask({ title: 'old', notes: 'a' })
+    await change(task.id, `title = 'new', notes = 'b'`)
+    const [, updated] = await events(task.id)
+    expect(updated).toMatchObject({ type: 'updated', changes: { title: ['old', 'new'], notes: ['a', 'b'] } })
+    expect(Object.keys(updated.changes).sort()).toEqual(['notes', 'title'])
+  })
+
+  it('names a status change, an assignment, done and reopened, deleted and restored', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const task = await insertTask()
+    await change(task.id, `status_key = 'completed'`)
+    await change(task.id, `assignee_id = $2`, [dana])
+    await change(task.id, `done_at = now()`)
+    await change(task.id, `done_at = null`)
+    await change(task.id, `deleted_at = now()`)
+    await change(task.id, `deleted_at = null`)
+    const rows = await events(task.id)
+    expect(rows.map((e) => e.type)).toEqual(['created', 'status', 'assigned', 'done', 'reopened', 'deleted', 'restored'])
+    expect(rows[1].changes).toEqual({ status_key: ['processing', 'completed'] })
+    expect(rows[2].changes).toEqual({ assignee_id: [null, dana] })
+  })
+
+  it('writes one event per kind of change when an update mixes them', async () => {
+    const task = await insertTask()
+    await change(task.id, `status_key = 'cargo', notes = 'sent'`)
+    const rows = await events(task.id)
+    expect(rows.map((e) => e.type)).toEqual(['created', 'status', 'updated'])
+    expect(rows[1].changes).toEqual({ status_key: ['processing', 'cargo'] })
+    expect(rows[2].changes).toEqual({ notes: ['', 'sent'] })
+  })
+
+  it('calls a change of the completion time an update, not a new "done"', async () => {
+    const task = await insertTask({ done_at: '2026-10-01T10:00:00Z' })
+    await change(task.id, `done_at = '2026-10-02T10:00:00Z'`)
+    const rows = await events(task.id)
+    expect(rows.map((e) => e.type)).toEqual(['created', 'updated'])
+    expect(Object.keys(rows[1].changes)).toEqual(['done_at'])
+  })
+
+  it('writes nothing for an update that changes nothing, and never lists derived columns', async () => {
+    const task = await insertTask({ customer_phone: '050-111' })
+    await change(task.id, `title = ''`)
+    await change(task.id, `customer_phone = '050-222'`)
+    const rows = await events(task.id)
+    expect(rows.map((e) => e.type)).toEqual(['created', 'updated'])
+    expect(Object.keys(rows[1].changes)).toEqual(['customer_phone'])
+  })
+
+  it('attributes a change to the person who made it', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const task = await insertTask()
+    await change(task.id, `title = 'by dana'`, [], dana)
+    const rows = await events(task.id)
+    expect(rows[1].actor_id).toBe(dana)
+  })
+
+  it('does not repeat itself when the same upsert is sent again, which is what a retried upload does', async () => {
+    const dana = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
+    const id = crypto.randomUUID()
+    const upsert = (by: string) =>
+      asUid(by, () =>
+        db.query(
+          `insert into public.tasks (id, title, no_glassix, done_at) values ($1, 'x', true, '2026-10-01T10:00:00Z')
+           on conflict (id) do update set title = excluded.title, no_glassix = excluded.no_glassix, done_at = excluded.done_at`,
+          [id],
+        ),
+      )
+    await upsert(owner)
+    await upsert(dana)
+    expect((await events(id)).map((e) => e.type)).toEqual(['created'])
+    const r = await db.query<{ done_by: string }>('select done_by from public.tasks where id = $1', [id])
+    expect(r.rows[0].done_by).toBe(owner)
+  })
+
+  it('records the adding and the removing of an attachment on the task', async () => {
+    const task = await insertTask()
+    const attachment = await insertAttachment(task.id as string, { kind: 'product' })
+    await db.query('delete from public.attachments where id = $1', [attachment])
+    const rows = await events(task.id)
+    expect(rows.map((e) => e.type)).toEqual(['created', 'attachment_added', 'attachment_removed'])
+    expect(rows[1].changes).toEqual({ attachment: [null, { id: attachment, kind: 'product' }] })
+    expect(rows[2].changes).toEqual({ attachment: [{ id: attachment, kind: 'product' }, null] })
+  })
+
+  it('still deletes a task together with its attachments and its history', async () => {
+    const task = await insertTask()
+    await insertAttachment(task.id as string)
+    await db.query('delete from public.tasks where id = $1', [task.id])
+    const r = await db.query('select count(*)::int as n from public.task_events where task_id = $1', [task.id])
+    expect(r.rows[0]).toEqual({ n: 0 })
+  })
+})

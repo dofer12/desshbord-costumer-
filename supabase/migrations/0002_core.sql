@@ -144,3 +144,131 @@ create table public.task_events (
 alter table public.task_events enable row level security;
 
 create index task_events_task_idx on public.task_events (task_id, at desc);
+
+-- ---------------------------------------------------------------------------------------------
+-- Part 2: triggers. They run on the server, so the app can neither skip them nor fake what they
+-- write.
+-- ---------------------------------------------------------------------------------------------
+
+-- Keeps the bookkeeping columns of a task honest, whatever the app sends: the id, the author and
+-- the creation time of a task never change, updated_at is the time of this change, and done_by is
+-- whoever marked the task done.
+create function public.touch_task() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+
+  if tg_op = 'INSERT' then
+    new.done_by := case when new.done_at is null then null else coalesce(auth.uid(), new.created_by) end;
+    return new;
+  end if;
+
+  new.id := old.id;
+  new.created_by := old.created_by;
+  new.created_at := old.created_at;
+  new.done_by := case
+    when new.done_at is null then null
+    when old.done_at is null then auth.uid()
+    -- Still done, so keep who did it. The one exception is the foreign key action that clears the
+    -- name of a removed person: it runs inside this trigger's caller (depth 2), never from the app.
+    when pg_trigger_depth() > 1 then new.done_by
+    else old.done_by
+  end;
+  return new;
+end;
+$$;
+
+create trigger tasks_touch
+  before insert or update on public.tasks
+  for each row execute function public.touch_task();
+
+-- Writes the history of a task: what changed, who changed it, and when.
+create function public.log_task_event() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  actor uuid := auth.uid();
+  rest jsonb;
+  step record;
+begin
+  if tg_op = 'INSERT' then
+    insert into public.task_events (task_id, actor_id, type) values (new.id, actor, 'created');
+    return null;
+  end if;
+
+  -- Every field that changed, as {field: [old, new]}. The fields that the server keeps up to date
+  -- itself say nothing about what a person did, so they are left out.
+  select coalesce(jsonb_object_agg(n.key, jsonb_build_array(o.value, n.value)), '{}'::jsonb)
+    into rest
+    from jsonb_each(to_jsonb(new)) as n
+    join jsonb_each(to_jsonb(old)) as o on o.key = n.key
+   where n.value is distinct from o.value
+     and n.key not in ('updated_at', 'done_by', 'created_at', 'customer_phone_digits');
+
+  -- A change of deleted_at, done_at, the status or the assignee gets an event of its own kind. A
+  -- move from one date to another date is not a deletion or a completion, so it stays with the rest.
+  for step in
+    select * from (values
+      (1, 'deleted_at', case
+        when old.deleted_at is null and new.deleted_at is not null then 'deleted'
+        when old.deleted_at is not null and new.deleted_at is null then 'restored'
+      end),
+      (2, 'done_at', case
+        when old.done_at is null and new.done_at is not null then 'done'
+        when old.done_at is not null and new.done_at is null then 'reopened'
+      end),
+      (3, 'status_key', 'status'),
+      (4, 'assignee_id', 'assigned')
+    ) as s (ord, field, kind)
+    where s.kind is not null and (rest -> s.field) is not null
+    order by s.ord
+  loop
+    insert into public.task_events (task_id, actor_id, type, changes)
+    values (new.id, actor, step.kind, jsonb_build_object(step.field, rest -> step.field));
+    rest := rest - step.field;
+  end loop;
+
+  if rest <> '{}'::jsonb then
+    insert into public.task_events (task_id, actor_id, type, changes) values (new.id, actor, 'updated', rest);
+  end if;
+  return null;
+end;
+$$;
+
+create trigger tasks_log_event
+  after insert or update on public.tasks
+  for each row execute function public.log_task_event();
+
+-- Writes the adding and the removing of an attachment on the history of its task.
+create function public.log_attachment_event() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.task_events (task_id, actor_id, type, changes)
+    values (
+      new.task_id, auth.uid(), 'attachment_added',
+      jsonb_build_object('attachment', jsonb_build_array(null::jsonb, jsonb_build_object('id', new.id, 'kind', new.kind)))
+    );
+  elsif exists (select 1 from public.tasks where id = old.task_id) then
+    -- When a whole task is deleted its attachments go with it, and its history goes too.
+    insert into public.task_events (task_id, actor_id, type, changes)
+    values (
+      old.task_id, auth.uid(), 'attachment_removed',
+      jsonb_build_object('attachment', jsonb_build_array(jsonb_build_object('id', old.id, 'kind', old.kind), null::jsonb))
+    );
+  end if;
+  return null;
+end;
+$$;
+
+create trigger attachments_log_event
+  after insert or delete on public.attachments
+  for each row execute function public.log_attachment_event();
