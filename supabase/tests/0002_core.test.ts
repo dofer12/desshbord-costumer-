@@ -153,6 +153,43 @@ describe('the Glassix rule', () => {
       /tasks_glassix_rule/,
     )
   })
+
+  // The app sends a change as an upsert that holds only the fields that changed. The database first
+  // builds a whole new row from the defaults for it, which has neither an id nor the tick, and only
+  // then finds that the task exists. The rule must judge the row that is really written.
+  const upsertNotes = (id: unknown) =>
+    asUid(owner, () =>
+      db.query(
+        `insert into public.tasks (id, notes) values ($1, 'changed')
+         on conflict (id) do update set notes = excluded.notes`,
+        [id],
+      ),
+    )
+
+  it('lets a change that leaves the Glassix fields out update a task that has an id', async () => {
+    const task = await insertTask({ no_glassix: false, glassix_conversation_id: 'c-1' })
+    await upsertNotes(task.id)
+    const r = await db.query('select notes, glassix_conversation_id from public.tasks where id = $1', [task.id])
+    expect(r.rows[0]).toEqual({ notes: 'changed', glassix_conversation_id: 'c-1' })
+  })
+
+  it('lets a change that leaves the Glassix fields out update a task that has the tick', async () => {
+    const task = await insertTask({ no_glassix: true })
+    await upsertNotes(task.id)
+    const r = await db.query('select notes, no_glassix from public.tasks where id = $1', [task.id])
+    expect(r.rows[0]).toEqual({ notes: 'changed', no_glassix: true })
+  })
+
+  it('still refuses a new task that has neither, also when it comes in as an upsert', async () => {
+    await expect(upsertNotes(crypto.randomUUID())).rejects.toThrow(/tasks_glassix_rule/)
+  })
+
+  it('refuses an update that takes both away', async () => {
+    const task = await insertTask({ no_glassix: true })
+    await expect(db.query('update public.tasks set no_glassix = false where id = $1', [task.id])).rejects.toThrow(
+      /tasks_glassix_rule/,
+    )
+  })
 })
 
 describe('value checks', () => {

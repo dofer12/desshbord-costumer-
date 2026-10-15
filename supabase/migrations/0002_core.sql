@@ -3,7 +3,7 @@
 -- that keep them honest. Run it once in the Supabase SQL Editor after 0001_profiles.sql.
 --
 -- Part 1: tables, constraints, indexes and seed data.
--- Part 2: triggers (updated_at, done_by, the change history).
+-- Part 2: triggers (updated_at, done_by, the change history, the Glassix rule).
 -- Part 3: permissions (row level security), the file bucket, realtime, profile functions.
 
 -- ---------------------------------------------------------------------------------------------
@@ -96,9 +96,10 @@ create table public.tasks (
 
   -- The id of the task in the old app. Unique, so importing the same backup twice adds nothing.
   legacy_id text unique,
-  legacy_handler text not null default '',
+  legacy_handler text not null default ''
 
-  constraint tasks_glassix_rule check (no_glassix or glassix_conversation_id <> '')
+  -- The rule "a Glassix conversation id, or the tick that there is none" is checked by a trigger
+  -- (check_glassix_rule, in part 2) and not by a CHECK constraint, see there.
 );
 
 alter table public.tasks enable row level security;
@@ -244,6 +245,28 @@ create trigger tasks_log_event
   after insert or update on public.tasks
   for each row execute function public.log_task_event();
 
+-- Every task has a Glassix conversation id, or the tick that there is no conversation. This is
+-- checked on the row that was really written, after the insert or the update, and not by a CHECK
+-- constraint: the app sends a change as an upsert that holds only the changed fields, Postgres
+-- first builds a whole new row from the defaults for it (which has neither the id nor the tick) and
+-- checks the constraints of that row before it finds that the task already exists.
+create function public.check_glassix_rule() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if not new.no_glassix and new.glassix_conversation_id = '' then
+    raise exception 'new row for relation "tasks" violates check constraint "tasks_glassix_rule"'
+      using errcode = '23514', schema = 'public', table = 'tasks', constraint = 'tasks_glassix_rule';
+  end if;
+  return null;
+end;
+$$;
+
+create trigger tasks_glassix_rule
+  after insert or update on public.tasks
+  for each row execute function public.check_glassix_rule();
+
 -- Writes the adding and the removing of an attachment on the history of its task.
 create function public.log_attachment_event() returns trigger
 language plpgsql
@@ -285,7 +308,8 @@ revoke all on table public.statuses, public.app_settings, public.tasks, public.a
   from public, anon, authenticated;
 -- The trigger functions are for the triggers only. (A trigger does not need its caller to be able to
 -- execute the function.)
-revoke all on function public.touch_task(), public.log_task_event(), public.log_attachment_event()
+revoke all on function
+  public.touch_task(), public.log_task_event(), public.log_attachment_event(), public.check_glassix_rule()
   from public, anon, authenticated;
 
 grant select, insert, update, delete on table public.statuses, public.app_settings to authenticated;
