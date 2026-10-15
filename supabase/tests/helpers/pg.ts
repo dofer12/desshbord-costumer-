@@ -22,6 +22,36 @@ $$;
 grant usage on schema public to anon, authenticated;
 -- Column defaults such as auth.uid() run as the calling role, which therefore needs the schema.
 grant usage on schema auth to anon, authenticated;
+
+-- Supabase hands every new table, function and sequence in public to the two API roles, and a
+-- migration takes away what the app must not have. The stub does the same, so that a revoke
+-- which was forgotten shows up in the tests.
+alter default privileges in schema public grant all on tables to anon, authenticated;
+alter default privileges in schema public grant all on functions to anon, authenticated;
+alter default privileges in schema public grant all on sequences to anon, authenticated;
+
+-- The parts of Supabase Storage that a file bucket and its policies use.
+create schema storage;
+grant usage on schema storage to anon, authenticated;
+create table storage.buckets (
+  id text primary key,
+  name text not null,
+  public boolean not null default false,
+  file_size_limit bigint,
+  allowed_mime_types text[]
+);
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text not null references storage.buckets (id),
+  name text not null,
+  owner_id text,
+  created_at timestamptz not null default now()
+);
+alter table storage.objects enable row level security;
+grant all on table storage.objects to anon, authenticated;
+
+-- The publication that Supabase Realtime reads. It starts empty.
+create publication supabase_realtime;
 `
 
 /**

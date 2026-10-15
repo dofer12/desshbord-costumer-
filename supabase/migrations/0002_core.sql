@@ -272,3 +272,158 @@ $$;
 create trigger attachments_log_event
   after insert or delete on public.attachments
   for each row execute function public.log_attachment_event();
+
+-- ---------------------------------------------------------------------------------------------
+-- Part 3: permissions, the file bucket, realtime and the profile functions
+-- ---------------------------------------------------------------------------------------------
+-- Row level security is on for every table. The grants say what each of the two roles of the app
+-- can do at all, the policies say on which rows. `anon`, a visitor who is not signed in, gets
+-- nothing. Supabase hands every new table and function to both roles, so what the app must not
+-- have is taken away first.
+
+revoke all on table public.statuses, public.app_settings, public.tasks, public.attachments, public.task_events
+  from public, anon, authenticated;
+-- The trigger functions are for the triggers only. (A trigger does not need its caller to be able to
+-- execute the function.)
+revoke all on function public.touch_task(), public.log_task_event(), public.log_attachment_event()
+  from public, anon, authenticated;
+
+grant select, insert, update, delete on table public.statuses, public.app_settings to authenticated;
+-- Nobody deletes a task: it is marked deleted instead, and the history keeps the record.
+grant select, insert, update on table public.tasks to authenticated;
+grant select, insert, delete on table public.attachments to authenticated;
+-- The history is written by the triggers alone.
+grant select on table public.task_events to authenticated;
+
+-- Statuses and settings: every active member reads, an administrator writes.
+create policy statuses_select_members on public.statuses
+  for select to authenticated using ((select public.is_member()));
+create policy statuses_insert_admin on public.statuses
+  for insert to authenticated with check ((select public.is_admin()));
+create policy statuses_update_admin on public.statuses
+  for update to authenticated using ((select public.is_admin())) with check ((select public.is_admin()));
+create policy statuses_delete_admin on public.statuses
+  for delete to authenticated using ((select public.is_admin()));
+
+create policy app_settings_select_members on public.app_settings
+  for select to authenticated using ((select public.is_member()));
+create policy app_settings_insert_admin on public.app_settings
+  for insert to authenticated with check ((select public.is_admin()));
+create policy app_settings_update_admin on public.app_settings
+  for update to authenticated using ((select public.is_admin())) with check ((select public.is_admin()));
+create policy app_settings_delete_admin on public.app_settings
+  for delete to authenticated using ((select public.is_admin()));
+
+-- Tasks: every active member reads (deleted rows too, so that a deletion reaches every device),
+-- creates a task under their own name, and edits any task.
+create policy tasks_select_members on public.tasks
+  for select to authenticated using ((select public.is_member()));
+create policy tasks_insert_members on public.tasks
+  for insert to authenticated
+  with check ((select public.is_member()) and created_by = (select auth.uid()));
+create policy tasks_update_members on public.tasks
+  for update to authenticated using ((select public.is_member())) with check ((select public.is_member()));
+
+-- Attachments: members read and add (under their own name); the person who added one, or an
+-- administrator, removes it.
+create policy attachments_select_members on public.attachments
+  for select to authenticated using ((select public.is_member()));
+create policy attachments_insert_members on public.attachments
+  for insert to authenticated
+  with check ((select public.is_member()) and uploaded_by = (select auth.uid()));
+create policy attachments_delete_uploader_or_admin on public.attachments
+  for delete to authenticated
+  using ((select public.is_member()) and (uploaded_by = (select auth.uid()) or (select public.is_admin())));
+
+create policy task_events_select_members on public.task_events
+  for select to authenticated using ((select public.is_member()));
+
+-- The private bucket for the pictures: JPEG only, 5 MB at most (the app shrinks them first).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('task-files', 'task-files', false, 5 * 1024 * 1024, array['image/jpeg'])
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+-- Active members read and add files in that bucket; the uploader or an administrator deletes one;
+-- nobody overwrites one.
+create policy task_files_select_members on storage.objects
+  for select to authenticated
+  using (bucket_id = 'task-files' and (select public.is_member()));
+create policy task_files_insert_members on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'task-files' and (select public.is_member()));
+create policy task_files_delete_uploader_or_admin on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'task-files'
+    and (select public.is_member())
+    and (owner_id = (select auth.uid())::text or (select public.is_admin()))
+  );
+
+-- Realtime: the tables whose changes every open app has to hear about. Where there is no realtime
+-- publication nothing happens.
+do $$
+declare
+  v_table text;
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    foreach v_table in array array['tasks', 'statuses', 'app_settings', 'profiles'] loop
+      if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = v_table
+      ) then
+        execute format('alter publication supabase_realtime add table public.%I', v_table);
+      end if;
+    end loop;
+  end if;
+end;
+$$;
+
+-- The only two things a user may change about their own profile. Nobody can write to profiles
+-- directly, so nobody can make themselves an administrator or switch themselves back on.
+create function public.update_my_profile(p_display_name text, p_default_remind_min integer)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_name text := nullif(btrim(p_display_name), '');
+begin
+  if not public.is_member() then
+    raise exception 'only an active member can change their profile' using errcode = '42501';
+  end if;
+  if v_name is null then
+    raise exception 'the display name cannot be empty' using errcode = '22023';
+  end if;
+  if p_default_remind_min is null or p_default_remind_min < 0 then
+    raise exception 'the default reminder cannot be negative or missing' using errcode = '22023';
+  end if;
+  -- A name that a colleague already has raises the unique violation of profiles_display_name_key.
+  update public.profiles
+     set display_name = v_name, default_remind_min = p_default_remind_min
+   where id = (select auth.uid());
+end;
+$$;
+
+-- Called after the user has chosen a new password of their own.
+create function public.clear_must_change_password()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_member() then
+    raise exception 'only an active member can change their profile' using errcode = '42501';
+  end if;
+  update public.profiles set must_change_password = false where id = (select auth.uid());
+end;
+$$;
+
+revoke all on function public.update_my_profile(text, integer) from public, anon;
+revoke all on function public.clear_must_change_password() from public, anon;
+grant execute on function public.update_my_profile(text, integer) to authenticated;
+grant execute on function public.clear_must_change_password() to authenticated;

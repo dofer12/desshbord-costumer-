@@ -17,5 +17,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'supabase/tests/**/*.test.ts', 'scripts/**/*.test.ts'],
+    // Every database test starts its own Postgres (WebAssembly), which on a busy machine can take
+    // longer than Vitest's default limits of 5 s for a test and 10 s for a hook.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 })
