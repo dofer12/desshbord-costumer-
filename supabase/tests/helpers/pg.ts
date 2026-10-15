@@ -20,6 +20,8 @@ create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
 grant usage on schema public to anon, authenticated;
+-- Column defaults such as auth.uid() run as the calling role, which therefore needs the schema.
+grant usage on schema auth to anon, authenticated;
 `
 
 /**
