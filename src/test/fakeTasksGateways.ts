@@ -9,7 +9,7 @@ import type {
   TaskEvent,
   TasksGateway,
 } from '../features/tasks/gateways'
-import { DEFAULT_SHIP_METHODS, newTask, type Task, type TaskPatch } from '../features/tasks/model'
+import { DEFAULT_SHIP_METHODS, SERVER_OWNED_FIELDS, newTask, type Task, type TaskPatch } from '../features/tasks/model'
 import { normalizeQuery, phoneNeedle } from '../features/tasks/search'
 import { DANA, OWNER } from './fakeGateway'
 
@@ -20,10 +20,10 @@ import { DANA, OWNER } from './fakeGateway'
 
 const clone = <T>(value: T): T => structuredClone(value)
 
-const SERVER_OWNED = new Set(['id', 'created_by', 'created_at', 'updated_at', 'done_by', 'customer_phone_digits'])
-
 function cleanPatch(patch: TaskPatch): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(patch).filter(([field, value]) => value !== undefined && !SERVER_OWNED.has(field)))
+  return Object.fromEntries(
+    Object.entries(patch).filter(([field, value]) => value !== undefined && !SERVER_OWNED_FIELDS.has(field)),
+  )
 }
 
 /** What a failed call looks like when the server cannot be reached. */

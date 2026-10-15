@@ -9,7 +9,7 @@ import type {
   TaskEvent,
   TasksGateway,
 } from './gateways'
-import { DEFAULT_SHIP_METHODS, type Task, type TaskPatch } from './model'
+import { DEFAULT_SHIP_METHODS, SERVER_OWNED_FIELDS, type Task, type TaskPatch } from './model'
 import { buildSearchFilter } from './search'
 
 /** The database API answers at most 1000 rows to one request. */
@@ -36,12 +36,10 @@ function storageError(error: { message: string; status?: number }): GatewayError
   return Object.assign(new Error(error.message), { status: typeof error.status === 'number' ? error.status : 0 })
 }
 
-// The fields that the database keeps itself. They are never sent, even if a caller passes them.
-const KEPT_BY_THE_DATABASE = new Set(['id', 'created_by', 'created_at', 'updated_at', 'done_by', 'customer_phone_digits'])
-
+// The fields that the database keeps itself are never sent, even if a caller passes them.
 function cleanPatch(patch: TaskPatch): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(patch).filter(([field, value]) => value !== undefined && !KEPT_BY_THE_DATABASE.has(field)),
+    Object.entries(patch).filter(([field, value]) => value !== undefined && !SERVER_OWNED_FIELDS.has(field)),
   )
 }
 

@@ -71,6 +71,21 @@ export type TaskPatch = Partial<
   Omit<Task, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'done_by' | 'customer_phone_digits'>
 >
 
+/** The fields that the database keeps itself. A change never carries them, whatever a caller passes. */
+export const SERVER_OWNED_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'created_by',
+  'created_at',
+  'updated_at',
+  'done_by',
+  'customer_phone_digits',
+])
+
+/** Every field of a task that a change may carry. This is how a new task is sent: whole. */
+export function taskToPatch(task: Task): TaskPatch {
+  return Object.fromEntries(Object.entries(task).filter(([field]) => !SERVER_OWNED_FIELDS.has(field))) as TaskPatch
+}
+
 /** A new, empty task with the defaults of the database. Its id is made here, so that a resend is safe. */
 export function newTask(createdBy: string, id: string = crypto.randomUUID()): Task {
   const now = new Date().toISOString()

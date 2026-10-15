@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SHIP_METHODS, KIND_LABEL, PRIORITIES, PRIORITY_LABEL, TASK_KINDS, newTask } from './model'
+import {
+  DEFAULT_SHIP_METHODS,
+  KIND_LABEL,
+  PRIORITIES,
+  PRIORITY_LABEL,
+  SERVER_OWNED_FIELDS,
+  TASK_KINDS,
+  newTask,
+  taskToPatch,
+} from './model'
 
 describe('newTask', () => {
   it('starts with the defaults of the database', () => {
@@ -54,6 +63,29 @@ describe('newTask', () => {
     expect(task.created_at).toBe(task.updated_at)
     expect(Date.parse(task.created_at)).toBeGreaterThanOrEqual(before)
     expect(Date.parse(task.created_at)).toBeLessThanOrEqual(Date.now())
+  })
+})
+
+describe('taskToPatch', () => {
+  it('carries every field of the task except the ones that the database keeps itself', () => {
+    const task = newTask('user-1', 'task-1')
+    const patch = taskToPatch(task)
+    expect(Object.keys(patch).sort()).toEqual(Object.keys(task).filter((field) => !SERVER_OWNED_FIELDS.has(field)).sort())
+    for (const field of ['id', 'created_by', 'created_at', 'updated_at', 'done_by', 'customer_phone_digits']) {
+      expect(patch).not.toHaveProperty(field)
+    }
+  })
+
+  it('keeps the values, including the empty ones and null, because a new task is sent whole', () => {
+    const patch = taskToPatch({ ...newTask('user-1', 'task-1'), title: 'x', assignee_id: null, notes: '' })
+    expect(patch).toMatchObject({ title: 'x', assignee_id: null, notes: '', status_key: 'processing', duration_min: 30 })
+  })
+
+  it('does not change the task it was given', () => {
+    const task = newTask('user-1', 'task-1')
+    const before = structuredClone(task)
+    taskToPatch(task)
+    expect(task).toEqual(before)
   })
 })
 

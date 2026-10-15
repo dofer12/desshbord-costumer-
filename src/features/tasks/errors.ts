@@ -14,3 +14,27 @@ export function isRetryable(err: unknown): boolean {
 export function isNotSetUp(err: unknown): boolean {
   return classifyProfileFailure(err) === 'notSetUp'
 }
+
+export const SYNC_MESSAGES = {
+  notSetUp: 'בסיס הנתונים עדיין לא הוכן לעבודה. פנו למנהל המערכת.',
+  unreachable: 'אין חיבור לשרת, או שהשרת לא זמין כרגע. נסו שוב בעוד רגע.',
+  loadFailed: 'לא הצלחנו לטעון את הנתונים. נסו שוב.',
+  glassixRule: 'חסר מזהה שיחת Glassix, או סימון "אין שיחה ב-Glassix".',
+  notAllowed: 'אין הרשאה לשמור את השינוי.',
+  rejected: 'השרת סירב לשמור את השינוי.',
+} as const
+
+/** A message that is safe to show when loading failed. The text of the server is never shown. */
+export function toHebrewLoadError(err: unknown): string {
+  if (isNotSetUp(err)) return SYNC_MESSAGES.notSetUp
+  if (isRetryable(err)) return SYNC_MESSAGES.unreachable
+  return SYNC_MESSAGES.loadFailed
+}
+
+/** Why the server refused a change, in words for the person who made it. */
+export function toHebrewSaveFailure(err: unknown): string {
+  const e = err && typeof err === 'object' ? (err as { code?: string; status?: number; message?: string }) : null
+  if (e?.code === '23514' && /tasks_glassix_rule/.test(String(e.message ?? ''))) return SYNC_MESSAGES.glassixRule
+  if (e?.status === 401 || e?.status === 403 || e?.code === '42501') return SYNC_MESSAGES.notAllowed
+  return SYNC_MESSAGES.rejected
+}
