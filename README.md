@@ -13,6 +13,7 @@ A Hebrew, right-to-left task journal for a service desk. One codebase, three tar
 | `npm run dev` | Web dev server. Needs `.env` or `.env.local` with the Supabase settings. |
 | `npm test` | Unit, component and database-migration tests. |
 | `npm run typecheck` / `npm run lint` | Static checks. |
+| `node supabase/tests/security-check.ts` | Live check of the permissions of the real Supabase project: makes temporary users, tries every cell of the table of permissions as each of them, and deletes them. Asks for the secret key (not shown, never saved). See `docs/setup-he.md`, step 6. |
 | `npm run build` | Production web build into `dist/`. |
 | `npm run electron:dev` | Build, then open the Windows app. |
 | `npm run electron:smoke` | Open the Windows app without showing it and check that the first screen renders. |

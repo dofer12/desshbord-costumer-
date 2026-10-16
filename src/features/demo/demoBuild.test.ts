@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * Texts that appear in a bundle only when the demo is in it: the address of the demo profile (the
- * demo gateway) and the name of the first sample customer (the demo backend). Keep them in step
- * with demoGateway.ts and demoBackend.ts.
+ * demo gateway), the name of the first sample customer and the id of the sample picture (the demo
+ * backend). Keep them in step with demoGateway.ts and demoBackend.ts.
  */
-const DEMO_MARKERS = ['demo@moked.invalid', 'לקוח לדוגמה א׳']
+const DEMO_MARKERS = ['demo@moked.invalid', 'לקוח לדוגמה א׳', 'demo-pickup-photo']
 
 interface BuiltChunk {
   code?: string

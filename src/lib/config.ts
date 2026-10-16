@@ -14,7 +14,7 @@ export class ConfigError extends Error {
 type EnvLike = Record<string, unknown>
 
 /** True for Supabase secret keys: the "sb_secret_" format and legacy service_role JWTs. */
-function isSecretKey(key: string): boolean {
+export function isSecretKey(key: string): boolean {
   if (key.startsWith('sb_secret_')) return true
   const parts = key.split('.')
   if (parts.length !== 3) return false

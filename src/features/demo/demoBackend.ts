@@ -71,6 +71,33 @@ function onDay(at: Date, days: number, time: string): string {
   return toDueAt(date, time)!
 }
 
+/** The id of the picture of the sample pickup, which is also the picture that the task has set as its product. */
+const DEMO_PICTURE_ID = 'demo-pickup-photo'
+
+/** A drawing of a drill, as the picture of the product of the sample pickup. It is made when the demo starts. */
+function demoProductPicture(): Blob {
+  const drawing = [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">',
+    '<rect width="640" height="480" fill="#eef3f6"/>',
+    '<rect x="150" y="170" width="260" height="110" rx="30" fill="#1e88c9"/>',
+    '<rect x="390" y="195" width="130" height="60" rx="12" fill="#14262e"/>',
+    '<rect x="200" y="270" width="70" height="150" rx="16" fill="#1e88c9"/>',
+    '<text x="320" y="460" text-anchor="middle" font-family="sans-serif" font-size="30" fill="#14262e">DR-2040</text>',
+    '</svg>',
+  ].join('')
+  return new Blob([drawing], { type: 'image/svg+xml' })
+}
+
+/** Gives the first picture of the demo its fixed id, and every other one an id of its own. */
+function demoPictureIds(): () => string {
+  let first = true
+  return () => {
+    if (!first) return crypto.randomUUID()
+    first = false
+    return DEMO_PICTURE_ID
+  }
+}
+
 /**
  * The sample tasks, made from the time the demo starts: some are late, some are due soon or later
  * today, some tomorrow or further on, and some have no date; some are done. They obey the rules of the
@@ -122,6 +149,7 @@ export function createDemoTasks(at: Date): Task[] {
       title: 'לתאם איסוף מהסניף',
       kind: 'pickup',
       status_key: 'await-pickup',
+      thumb_attachment_id: DEMO_PICTURE_ID,
       order_number: '900103',
       customer_name: 'לקוח לדוגמה ג׳',
       customer_phone: '050-0000003',
@@ -267,6 +295,191 @@ export function createDemoTasks(at: Date): Task[] {
       updated_at: from(-45 * DAY),
       no_glassix: true,
     }),
+    sample('demo-failed-payment', {
+      title: 'לטפל בתשלום שנכשל בהזמנה',
+      priority: 'high',
+      status_key: 'failed',
+      order_number: '900114',
+      customer_name: 'לקוח לדוגמה יד׳',
+      customer_phone: '050-0000014',
+      assignee_id: DANA,
+      due_at: from(-3 * HOUR),
+      remind_min: 15,
+      glassix_conversation_id: 'demo-4814',
+    }),
+    sample('demo-cancelled-order', {
+      title: 'לאשר ללקוחה שההזמנה בוטלה',
+      status_key: 'cancelled',
+      order_number: '900115',
+      customer_name: 'לקוחה לדוגמה טו׳',
+      customer_phone: '050-0000015',
+      assignee_id: MICHAL,
+      created_by: MICHAL,
+      due_at: from(-2 * DAY),
+      done_at: from(-2 * DAY + HOUR),
+      done_by: MICHAL,
+      updated_at: from(-2 * DAY + HOUR),
+      no_glassix: true,
+    }),
+    sample('demo-delivered-branch', {
+      title: 'לוודא שהלקוח קיבל את המוצר בסניף',
+      kind: 'pickup',
+      status_key: 'delivered-branch',
+      order_number: '900116',
+      customer_name: 'לקוח לדוגמה טז׳',
+      customer_phone: '050-0000016',
+      assignee_id: ME,
+      due_at: from(-5 * HOUR),
+      done_at: from(-HOUR),
+      done_by: ME,
+      updated_at: from(-HOUR),
+      product_name: 'סט ברגים',
+      product_sku: 'SC-310',
+      ship_method: 'נקודת איסוף',
+      no_glassix: true,
+    }),
+    sample('demo-pull-stock', {
+      title: 'לבקש משיכת מלאי מסניף חיפה',
+      status_key: 'pull',
+      order_number: '900117',
+      customer_name: 'לקוח לדוגמה יז׳',
+      customer_phone: '050-0000017',
+      assignee_id: AVI,
+      due_at: onDay(at, 1, '08:30'),
+      remind_min: 30,
+      glassix_conversation_id: 'demo-4817',
+    }),
+    sample('demo-invoice', {
+      title: 'לשלוח חשבונית מתוקנת ללקוחה',
+      customer_name: 'לקוחה לדוגמה יח׳',
+      customer_phone: '050-0000018',
+      order_number: '900118',
+      assignee_id: DANA,
+      notes: 'החשבונית הקודמת יצאה על שם העסק ולא על שם הלקוחה.',
+      no_glassix: true,
+    }),
+    sample('demo-address-change', {
+      title: 'לעדכן כתובת משלוח לפני היציאה',
+      kind: 'delivery',
+      status_key: 'cargo',
+      priority: 'high',
+      order_number: '900119',
+      customer_name: 'לקוח לדוגמה יט׳',
+      customer_phone: '050-0000019',
+      assignee_id: ME,
+      due_at: from(25 * MINUTE),
+      remind_min: 10,
+      ship_method: 'CARGO',
+      ship_to: 'רחוב הרצל 14, תל אביב',
+      cargo_number: 'CG-100412',
+      glassix_conversation_id: 'demo-4819',
+    }),
+    sample('demo-warranty', {
+      title: 'לבדוק אחריות על מכשיר שהתקלקל',
+      status_key: 'on-hold',
+      service_call_number: 'SC-5560',
+      customer_name: 'לקוחה לדוגמה כ׳',
+      customer_phone: '050-0000020',
+      assignee_id: AVI,
+      due_at: onDay(at, 4, '11:00'),
+      no_glassix: true,
+    }),
+    sample('demo-callback-urgent', {
+      title: 'לחזור ללקוח כועס בנוגע להזמנה שהתעכבה',
+      priority: 'urgent',
+      status_key: 'manager',
+      order_number: '900121',
+      customer_name: 'לקוח לדוגמה כא׳',
+      customer_phone: '050-0000021',
+      assignee_id: ME,
+      due_at: from(40 * MINUTE),
+      duration_min: 15,
+      remind_min: 5,
+      glassix_conversation_id: 'demo-4821',
+    }),
+    sample('demo-pickup-tiles', {
+      title: 'לתאם איסוף של אריחים מהמחסן',
+      kind: 'pickup',
+      status_key: 'await-pickup',
+      order_number: '900122',
+      customer_name: 'לקוח לדוגמה כב׳',
+      customer_phone: '050-0000022',
+      assignee_id: DANA,
+      due_at: from(5 * HOUR),
+      product_name: 'אריחי קרמיקה 60×60',
+      product_sku: 'TL-6060',
+      ship_method: 'איסוף עצמי',
+      no_glassix: true,
+    }),
+    sample('demo-courier-delay', {
+      title: 'לברר מול השליח למה המשלוח מתעכב',
+      kind: 'delivery',
+      status_key: 'late',
+      priority: 'high',
+      order_number: '900123',
+      customer_name: 'לקוחה לדוגמה כג׳',
+      customer_phone: '050-0000023',
+      assignee_id: MICHAL,
+      created_by: AVI,
+      due_at: from(-DAY - 2 * HOUR),
+      ship_method: 'משלוח עד הבית',
+      ship_status: 'בדרך',
+      glassix_conversation_id: 'demo-4823',
+    }),
+    sample('demo-bank-transfer', {
+      title: 'לבדוק שההעברה הבנקאית נכנסה',
+      status_key: 'bank',
+      order_number: '900124',
+      customer_name: 'לקוח לדוגמה כד׳',
+      customer_phone: '050-0000024',
+      assignee_id: DANA,
+      due_at: onDay(at, 1, '15:00'),
+      no_glassix: true,
+    }),
+    sample('demo-abroad-tracking', {
+      title: 'לעקוב אחרי הזמנה שהוזמנה מחו"ל',
+      status_key: 'abroad',
+      order_number: '900125',
+      customer_name: 'לקוחה לדוגמה כה׳',
+      customer_phone: '050-0000025',
+      assignee_id: AVI,
+      due_at: onDay(at, 5, '10:00'),
+      notes: 'ההזמנה אמורה להגיע לנמל בסוף השבוע הבא.',
+      glassix_conversation_id: 'demo-4825',
+    }),
+    sample('demo-completed-yesterday', {
+      title: 'לשלוח ללקוח אישור על קבלת החזר',
+      status_key: 'completed',
+      order_number: '900126',
+      customer_name: 'לקוח לדוגמה כו׳',
+      customer_phone: '050-0000026',
+      assignee_id: ME,
+      due_at: from(-DAY),
+      done_at: from(-DAY + 2 * HOUR),
+      done_by: ME,
+      updated_at: from(-DAY + 2 * HOUR),
+      no_glassix: true,
+    }),
+    sample('demo-cargo-pending', {
+      title: 'להעביר ל-CARGO הזמנה של ריהוט',
+      kind: 'delivery',
+      status_key: 'cargo',
+      order_number: '900127',
+      customer_name: 'לקוחה לדוגמה כז׳',
+      customer_phone: '050-0000027',
+      assignee_id: null,
+      due_at: from(3 * HOUR),
+      ship_method: 'CARGO',
+      no_glassix: true,
+    }),
+    sample('demo-price-question', {
+      title: 'לענות ללקוח על שאלה בנוגע למחיר',
+      customer_name: 'לקוח לדוגמה כח׳',
+      customer_phone: '050-0000028',
+      assignee_id: MICHAL,
+      due_at: from(90 * MINUTE),
+      glassix_conversation_id: 'demo-4828',
+    }),
   ]
 }
 
@@ -286,6 +499,17 @@ function createDemoEvents(tasks: Task[]): TaskEvent[] {
 export function createDemoBackend(now: () => Date = () => new Date()): Backend {
   const tasks = createDemoTasks(now())
   const memory = createMemoryTasks({ userId: ME, tasks, events: createDemoEvents(tasks), now, echo: true, live: true })
+  const pictures = createMemoryAttachments({
+    userId: ME,
+    now,
+    // A picture is shown from the memory of the browser.
+    signedUrl: (_path, picture) => (picture ? URL.createObjectURL(picture) : ''),
+    // A picture is written on the history of its task, as the database does.
+    events: memory.events,
+    newId: demoPictureIds(),
+  })
+  // The sample pickup comes with the picture of its product. Adding it takes no waiting.
+  void pictures.gateway.add('demo-pickup', { full: demoProductPicture(), thumb: demoProductPicture(), kind: 'product', width: 640, height: 480 })
   return {
     tasks: memory.gateway,
     directory: createMemoryDirectory({
@@ -293,14 +517,7 @@ export function createDemoBackend(now: () => Date = () => new Date()): Backend {
       profiles: [DEMO_PROFILE, ...demoColleagues()],
       settings: { glassix_url_template: 'https://example.com/glassix/{id}' },
     }).gateway,
-    attachments: createMemoryAttachments({
-      userId: ME,
-      now,
-      // A picture that was added in the demo is shown from the memory of the browser.
-      signedUrl: (_path, picture) => (picture ? URL.createObjectURL(picture) : ''),
-      // A picture is written on the history of its task, as the database does.
-      events: memory.events,
-    }).gateway,
+    attachments: pictures.gateway,
     outbox: () => createMemoryOutboxStorage(),
   }
 }

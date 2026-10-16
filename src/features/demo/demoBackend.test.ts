@@ -61,6 +61,15 @@ describe('the sample tasks', () => {
     for (const task of tasks) expect(task.customer_phone_digits, task.id).toBe(task.customer_phone.replace(/\D/g, ''))
   })
 
+  it('are about thirty, so that the screen has something to scroll and to page', () => {
+    expect(tasks.length).toBeGreaterThanOrEqual(28)
+    expect(tasks.length).toBeLessThanOrEqual(36)
+  })
+
+  it('use every one of the statuses, so that every chip of the screen has something under it', () => {
+    expect(new Set(tasks.map((t) => t.status_key))).toEqual(new Set(demoStatuses().map((s) => s.key)))
+  })
+
   it('cover every kind and every priority', () => {
     expect(new Set(tasks.map((t) => t.kind))).toEqual(new Set(['general', 'delivery', 'pickup']))
     expect(new Set(tasks.map((t) => t.priority))).toEqual(new Set(['normal', 'high', 'urgent']))
@@ -175,6 +184,53 @@ describe('the demo backend', () => {
     } finally {
       URL.createObjectURL = original
     }
+  })
+
+  describe('the picture of the product', () => {
+    function withObjectUrls(): () => void {
+      const original = URL.createObjectURL
+      URL.createObjectURL = vi.fn((blob: Blob | MediaSource) => `blob:${(blob as Blob).type}`)
+      return () => {
+        URL.createObjectURL = original
+      }
+    }
+
+    it('is one picture, for the sample pickup, and it is the picture that the task has set as its product', async () => {
+      const restore = withObjectUrls()
+      try {
+        const backend = createDemoBackend(() => NOW)
+        const pickup = createDemoTasks(NOW).find((t) => t.id === 'demo-pickup')!
+        expect(pickup.thumb_attachment_id).not.toBeNull()
+        const pictures = await backend.attachments.list(pickup.id)
+        expect(pictures).toHaveLength(1)
+        expect(pictures[0]).toMatchObject({ id: pickup.thumb_attachment_id, task_id: pickup.id, kind: 'product' })
+        expect(pictures[0]).toMatchObject({ width: 640, height: 480 })
+        expect(await backend.attachments.signedUrl(pictures[0].storage_path)).toBe('blob:image/svg+xml')
+        expect(await backend.attachments.signedUrl(pictures[0].thumb_path)).toBe('blob:image/svg+xml')
+        for (const other of createDemoTasks(NOW).filter((t) => t.id !== pickup.id)) {
+          expect(await backend.attachments.list(other.id), other.id).toEqual([])
+          expect(other.thumb_attachment_id, other.id).toBeNull()
+        }
+      } finally {
+        restore()
+      }
+    })
+
+    it('is written on the history of the pickup, as the adding of a picture is', async () => {
+      const backend = createDemoBackend(() => NOW)
+      const history = await backend.tasks.loadHistory('demo-pickup')
+      expect(history.map((event) => event.type)).toEqual(['attachment_added', 'created'])
+      expect(history[0]).toMatchObject({ actor_id: DEMO_PROFILE.id, changes: { attachment: [null, { kind: 'product' }] } })
+    })
+
+    it('can be deleted like any other, and a picture that is added later gets an id of its own', async () => {
+      const backend = createDemoBackend(() => NOW)
+      const [seeded] = await backend.attachments.list('demo-pickup')
+      const added = await backend.attachments.add('demo-pickup', { full: new Blob(['x']), thumb: new Blob(['x']), kind: 'image', width: 10, height: 10 })
+      expect(added.id).not.toBe(seeded.id)
+      await backend.attachments.remove(seeded)
+      expect((await backend.attachments.list('demo-pickup')).map((picture) => picture.id)).toEqual([added.id])
+    })
   })
 
   it('gives every person a waiting-changes storage of their own', async () => {
