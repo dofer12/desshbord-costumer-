@@ -22,6 +22,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
             tasks: createTasksStore({ gateway: backend.tasks, storage: backend.outbox(userId) }),
             directory: createDirectoryStore(backend.directory),
             attachments: backend.attachments,
+            history: (taskId) => backend.tasks.loadHistory(taskId),
           },
     [backend, userId],
   )

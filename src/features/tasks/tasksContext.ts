@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 import { useStore } from 'zustand'
 import type { DirectoryActions, DirectoryState, DirectoryStore } from './directoryStore'
-import type { AttachmentsGateway } from './gateways'
+import type { AttachmentsGateway, TaskEvent } from './gateways'
 import type { TasksActions, TasksState, TasksStore } from './tasksStore'
 
 /** What the screens of the tasks share: the two stores of the signed-in user, and the pictures. */
@@ -9,6 +9,8 @@ export interface TasksContextValue {
   tasks: TasksStore
   directory: DirectoryStore
   attachments: AttachmentsGateway
+  /** The history of a task, newest first. */
+  history(taskId: string): Promise<TaskEvent[]>
 }
 
 export const TasksContext = createContext<TasksContextValue | null>(null)
@@ -29,4 +31,8 @@ export function useDirectory<T>(selector: (state: DirectoryState & DirectoryActi
 
 export function useAttachments(): AttachmentsGateway {
   return useTasksContext().attachments
+}
+
+export function useHistory(): TasksContextValue['history'] {
+  return useTasksContext().history
 }

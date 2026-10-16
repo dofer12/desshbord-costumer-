@@ -55,7 +55,12 @@ function openTasks(tasks: Task[], options: Options = {}) {
 }
 
 const findList = () => screen.findByRole('table', { name: 'רשימת משימות' })
-const titles = () => screen.queryAllByRole('checkbox').map((box) => box.getAttribute('aria-label')?.replace('בוצע: ', ''))
+const titles = () =>
+  screen
+    .queryAllByRole('checkbox')
+    .map((box) => box.getAttribute('aria-label') ?? '')
+    .filter((label) => label.startsWith('בוצע: '))
+    .map((label) => label.replace('בוצע: ', ''))
 const search = () => screen.getByRole('searchbox', { name: 'חיפוש' })
 
 describe('the rows', () => {
@@ -118,7 +123,26 @@ describe('the screen', () => {
   it('opens the card of a task beside the list, which stays where it is', async () => {
     openTasks([task('a')], { path: '/tasks/a' })
     await findList()
-    expect(screen.getByRole('heading', { level: 2, name: 'כרטיס משימה' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'משימה a' })).toBeInTheDocument()
+    expect(titles()).toEqual(['משימה a'])
+  })
+
+  it('opens the card of a task when its title is clicked', async () => {
+    const { user } = openTasks([task('a')])
+    await user.click(await screen.findByRole('link', { name: 'משימה a' }))
+    expect(await screen.findByRole('dialog', { name: 'משימה a' })).toBeInTheDocument()
+  })
+
+  it('opens a new task when the button is clicked, and keeps the filters of the list behind it', async () => {
+    const { user } = openTasks([task('a'), task('b', { assignee_id: OWNER.id })])
+    await findList()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'שיוך' }), 'all')
+    await user.click(screen.getByRole('link', { name: 'משימה חדשה' }))
+    expect(await screen.findByRole('dialog', { name: 'משימה חדשה' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'שיוך' })).toHaveValue('all')
+    expect(titles()).toEqual(['משימה a', 'משימה b'])
   })
 })
 
@@ -584,7 +608,7 @@ describe('the states', () => {
     const directory = createDirectoryStore(fake.directory.gateway)
     render(
       <AuthProvider store={auth}>
-        <TasksContext value={{ tasks, directory, attachments: fake.backend.attachments }}>
+        <TasksContext value={{ tasks, directory, attachments: fake.backend.attachments, history: fake.backend.tasks.loadHistory }}>
           <MemoryRouter>
             <TasksPage />
           </MemoryRouter>

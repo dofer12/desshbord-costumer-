@@ -19,6 +19,21 @@ describe('CopyButton', () => {
     expect(screen.getByRole('button', { name: 'העתקת טלפון: 050-1234567' })).toHaveTextContent('050-1234567')
   })
 
+  it('can show other text than the value, and says the same in its name', async () => {
+    const { user } = setup()
+    const writeText = stubClipboard()
+    render(
+      <CopyButton value="10442" label="מספר הזמנה">
+        העתקה
+      </CopyButton>,
+    )
+    const button = screen.getByRole('button', { name: 'העתקת מספר הזמנה: 10442' })
+    expect(button).toHaveTextContent('העתקה')
+    expect(button).not.toHaveTextContent('10442')
+    await user.click(button)
+    expect(writeText).toHaveBeenCalledWith('10442')
+  })
+
   it('copies the value, and confirms for a moment', async () => {
     const { user } = setup()
     const writeText = stubClipboard()

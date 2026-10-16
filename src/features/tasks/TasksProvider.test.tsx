@@ -8,7 +8,7 @@ import { createFakeBackend, type FakeBackend } from '../../test/fakeBackend'
 import { createFakeGateway, DANA, OWNER } from '../../test/fakeGateway'
 import { BackendContext } from './backend'
 import { newTask, type Task } from './model'
-import { useAttachments, useDirectory, useTasks } from './tasksContext'
+import { useAttachments, useDirectory, useHistory, useTasks } from './tasksContext'
 import { TasksProvider } from './TasksProvider'
 
 function task(id: string, patch: Partial<Task> = {}): Task {
@@ -149,6 +149,34 @@ describe('TasksProvider', () => {
 })
 
 describe('the hooks', () => {
+  it('give the history of a task from the backend', async () => {
+    const { auth } = await signedIn()
+    const fake = createFakeBackend({ tasks: [task('a')] })
+    await fake.backend.tasks.upsert('a', { notes: 'changed' })
+    let ask: ReturnType<typeof useHistory> = () => Promise.resolve([])
+    function Spy() {
+      const history = useHistory()
+      useEffect(() => {
+        ask = history
+      }, [history])
+      return null
+    }
+    render(
+      <AuthProvider store={auth}>
+        <BackendContext value={fake.backend}>
+          <TasksProvider>
+            <Spy />
+          </TasksProvider>
+        </BackendContext>
+      </AuthProvider>,
+    )
+    await vi.waitFor(() => expect(ask).not.toBeUndefined())
+    const events = await ask('a')
+    expect(events.map((event) => event.type)).toContain('updated')
+    expect(events.every((event) => event.task_id === 'a')).toBe(true)
+    expect(await ask('unknown')).toEqual([])
+  })
+
   it('give the gateway of the pictures that the backend has', async () => {
     const { auth } = await signedIn()
     const fake = createFakeBackend()

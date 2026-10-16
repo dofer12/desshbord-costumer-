@@ -31,7 +31,7 @@ async function renderShell(options: { path?: string; profile?: Profile } = {}) {
   tasks.setState({ live: true })
   const view = render(
     <AuthProvider store={auth}>
-      <TasksContext value={{ tasks, directory, attachments: fake.backend.attachments }}>
+      <TasksContext value={{ tasks, directory, attachments: fake.backend.attachments, history: fake.backend.tasks.loadHistory }}>
         <MemoryRouter initialEntries={[options.path ?? '/tasks']}>
           <Routes>
             <Route element={<AppShell serverHost="test.supabase.co" />}>
