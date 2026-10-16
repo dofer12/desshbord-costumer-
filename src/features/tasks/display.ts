@@ -1,8 +1,6 @@
+import { WEEKDAY_SHORT } from '../schedule/time'
 import type { Task } from './model'
 import { fallbackTitle, fromDueAt } from './validation'
-
-/** Sunday first, as the week is counted in Israel. */
-const WEEKDAY = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'] as const
 
 /** A calendar day as a number of days since 1970, so that two days can be subtracted. */
 function dayNumber(date: string): number {
@@ -25,7 +23,7 @@ export function formatDue(dueAt: string, now: Date): string {
   if (apart === -1) return `אתמול · ${due.dueTime}`
   const [year, month, day] = due.dueDate.split('-').map(Number)
   if (year !== Number(today.slice(0, 4))) return `${day}.${month}.${year} · ${due.dueTime}`
-  const weekday = WEEKDAY[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]
+  const weekday = WEEKDAY_SHORT[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]
   return `${weekday} ${day}.${month} · ${due.dueTime}`
 }
 
