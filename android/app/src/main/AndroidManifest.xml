@@ -35,6 +35,14 @@
         </provider>
     </application>
 
+    <!-- From Android 11 other apps are hidden unless the manifest asks to see them: the camera must be
+         visible, or the "צלם" button of a task opens the file picker and not the camera. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />

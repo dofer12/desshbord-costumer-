@@ -1,53 +1,12 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { card, findCard, lastUpsert, openCard, task, type } from '../../test/cardHarness'
 import { stubClipboard } from '../../test/clipboard'
-import type { FakeBackend } from '../../test/fakeBackend'
 import { DANA, OWNER } from '../../test/fakeGateway'
-import { stubViewport } from '../../test/matchMedia'
-import { renderApp } from '../../test/renderApp'
 import { TASK_MESSAGES } from './validation'
-import { newTask, type Task } from './model'
 
 const HOUR = 3_600_000
 const ahead = (ms: number) => new Date(Date.now() + ms).toISOString()
-
-function task(id: string, patch: Partial<Task> = {}): Task {
-  return {
-    ...newTask(OWNER.id, id),
-    title: `משימה ${id}`,
-    customer_name: 'רונית כהן',
-    no_glassix: true,
-    assignee_id: DANA.id,
-    created_at: '2026-10-01T08:00:00.000Z',
-    updated_at: '2026-10-01T08:00:00.000Z',
-    ...patch,
-  }
-}
-
-interface Options {
-  backend?: (fake: FakeBackend) => void
-}
-
-/** The whole app, signed in as Dana, at the card of a task or at a new one, over a pretend server that holds these tasks. */
-function openCard(path: string, tasks: Task[] = [], options: Options = {}) {
-  stubViewport('wide')
-  const user = userEvent.setup()
-  const app = renderApp({
-    path,
-    configure: (fake) => fake.getStoredUserId.mockResolvedValue(DANA.id),
-    configureBackend: (fake) => {
-      for (const t of tasks) fake.tasks.rows.set(t.id, t)
-      options.backend?.(fake)
-    },
-  })
-  return { ...app, user }
-}
-
-const findCard = () => screen.findByRole('dialog')
-const card = () => within(screen.getByRole('dialog'))
-const lastUpsert = (fake: FakeBackend) => fake.tasks.upserts.at(-1)
-const type = (user: ReturnType<typeof userEvent.setup>, label: string, text: string) => user.type(card().getByLabelText(label), text)
 
 describe('a new task', () => {
   it('has a name, and is for the person who is making it', async () => {
@@ -452,6 +411,22 @@ describe('done and delete', () => {
     await user.click(card().getByRole('button', { name: 'מחק משימה' }))
     expect(card().getByRole('button', { name: 'לא, להשאיר' })).toHaveFocus()
   })
+
+  it('gives the focus back to the delete button when the answer is no, so that it is not lost', async () => {
+    const { user } = openCard('/tasks/a', [a])
+    await findCard()
+    await user.click(card().getByRole('button', { name: 'מחק משימה' }))
+    await user.click(card().getByRole('button', { name: 'לא, להשאיר' }))
+    expect(card().getByRole('button', { name: 'מחק משימה' })).toHaveFocus()
+  })
+
+  it('gives it back when the question is left with Escape too', async () => {
+    const { user } = openCard('/tasks/a', [a])
+    await findCard()
+    await user.click(card().getByRole('button', { name: 'מחק משימה' }))
+    await user.keyboard('{Escape}')
+    expect(card().getByRole('button', { name: 'מחק משימה' })).toHaveFocus()
+  })
 })
 
 describe('closing', () => {
@@ -482,6 +457,33 @@ describe('closing', () => {
     expect(card().queryByText('יש שינויים שלא נשמרו.')).not.toBeInTheDocument()
     expect(card().getByLabelText('הערות')).toHaveValue('חשוב')
     expect(backend.tasks.upserts).toHaveLength(0)
+  })
+
+  it('puts the focus back in the field the person was in when they go back to editing', async () => {
+    const { user } = openCard('/tasks/a', [a])
+    await findCard()
+    await type(user, 'הערות', 'חשוב')
+    await user.keyboard('{Escape}')
+    await user.click(card().getByRole('button', { name: 'חזרה לעריכה' }))
+    expect(card().getByLabelText('הערות')).toHaveFocus()
+  })
+
+  it('puts the focus back on the button that asked, when it was a button', async () => {
+    const { user } = openCard('/tasks/a', [a])
+    await findCard()
+    await type(user, 'הערות', 'חשוב')
+    await user.click(card().getByRole('button', { name: 'ביטול' }))
+    await user.click(card().getByRole('button', { name: 'חזרה לעריכה' }))
+    expect(card().getByRole('button', { name: 'ביטול' })).toHaveFocus()
+  })
+
+  it('puts the focus on the title when nothing in the card had it, as after a click on the dark area', async () => {
+    const { user } = openCard('/tasks/a', [a])
+    await findCard()
+    await type(user, 'הערות', 'חשוב')
+    await user.click(screen.getByRole('dialog').parentElement as HTMLElement)
+    await user.click(card().getByRole('button', { name: 'חזרה לעריכה' }))
+    expect(card().getByLabelText('כותרת')).toHaveFocus()
   })
 
   it('closes without saving when the person says so', async () => {

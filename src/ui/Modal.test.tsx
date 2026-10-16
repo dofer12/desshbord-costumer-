@@ -191,4 +191,46 @@ describe('Modal', () => {
     await user.keyboard('{Escape}')
     expect(document.body.style.overflow).toBe('scroll')
   })
+
+  describe('with a second window over it', () => {
+    function Stacked({ inner }: { inner: boolean }) {
+      return (
+        <Modal labelledBy="outer" onClose={() => undefined}>
+          <h2 id="outer">Outer</h2>
+          {inner && (
+            <Modal labelledBy="inner" onClose={() => undefined}>
+              <h2 id="inner">Inner</h2>
+            </Modal>
+          )}
+        </Modal>
+      )
+    }
+
+    it('keeps the page still until the last window is gone, and then puts back what it had', () => {
+      document.body.style.overflow = 'scroll'
+      const view = render(<Stacked inner={false} />)
+      view.rerender(<Stacked inner />)
+      expect(document.body.style.overflow).toBe('hidden')
+      view.rerender(<Stacked inner={false} />)
+      expect(document.body.style.overflow).toBe('hidden')
+      view.unmount()
+      expect(document.body.style.overflow).toBe('scroll')
+    })
+
+    it('puts back what the page had when both windows go away together, as when the page behind changes', () => {
+      document.body.style.overflow = 'scroll'
+      const view = render(<Stacked inner />)
+      view.unmount()
+      expect(document.body.style.overflow).toBe('scroll')
+    })
+
+    it('does not mistake what the first window set for what the page had, when the windows come one after the other', () => {
+      const first = render(<Stacked inner={false} />)
+      first.unmount()
+      expect(document.body.style.overflow).toBe('')
+      const second = render(<Stacked inner />)
+      second.unmount()
+      expect(document.body.style.overflow).toBe('')
+    })
+  })
 })

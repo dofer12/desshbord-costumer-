@@ -897,6 +897,159 @@ a.btn {
   background: var(--crit-soft);
 }
 
+/* Kept for a screen reader and the keyboard, and out of sight: the file input inside a button-looking label. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* The pictures of a task. */
+.images {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-btn {
+  position: relative;
+}
+
+.file-btn:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.file-btn.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.images-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.image-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.image-thumb:hover {
+  border-color: var(--muted);
+}
+
+.image-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-badge {
+  position: absolute;
+  inset-block-end: 4px;
+  inset-inline-start: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+.picture-wait {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  background: var(--sunken);
+}
+
+.picture-gone {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  padding: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.viewer-body {
+  display: flex;
+  justify-content: center;
+  min-height: 200px;
+  padding: 14px 20px;
+  background: var(--sunken);
+}
+
+.viewer-image {
+  max-width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+}
+
+.viewer-problem {
+  margin: 10px 20px 0;
+}
+
+.product-image {
+  display: flex;
+}
+
+.product-thumb {
+  max-width: 160px;
+  max-height: 160px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.product-note {
+  align-self: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* A demo build (npm run demo): a strip across the top, with room made for it. */
 .demo-banner {
   position: fixed;

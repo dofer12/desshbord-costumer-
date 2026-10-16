@@ -1,6 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Modal } from '../../ui/Modal'
 import { useAuth } from '../auth/authContext'
+import { ProductImage } from '../images/ProductImage'
+import { TaskImages } from '../images/TaskImages'
+import { useTaskImages } from '../images/useTaskImages'
 import { CheckboxField, SelectField, TextAreaField, TextField } from './cardFields'
 import { CopyButton } from './CopyButton'
 import { dialHref, taskTitle } from './display'
@@ -96,7 +99,13 @@ export function TaskCard({ task, isNew, onClose }: Props) {
   const [asking, setAsking] = useState<'discard' | 'delete' | null>(null)
   const [updatedBy, setUpdatedBy] = useState<string | null>(null)
   const safeAnswer = useRef<HTMLButtonElement>(null)
+  const deleteButton = useRef<HTMLButtonElement>(null)
+  // What had the focus when the question about closing was asked, and which question was asked before.
+  const returnTo = useRef<Element | null>(null)
+  const wasAsking = useRef<typeof asking>(null)
   const options = useDraftOptions(draft)
+  // A task that is not saved yet has no pictures: they belong to it on the server.
+  const images = useTaskImages(isNew ? null : base.id)
 
   // A new version of the task came from the server: show it in the fields that were not touched.
   if (task !== base) {
@@ -124,9 +133,20 @@ export function TaskCard({ task, isNew, onClose }: Props) {
     }
   }, [history, isNew, me, openedAt, profiles, task.id, task.updated_at])
 
+  // A question puts the focus on the safe answer. When it is answered with no, the buttons of the question are
+  // gone, and the focus goes back to where it was, so that it is not lost to the page behind the card.
   useEffect(() => {
-    if (asking) safeAnswer.current?.focus()
-  }, [asking])
+    if (asking) {
+      safeAnswer.current?.focus()
+    } else if (wasAsking.current === 'delete') {
+      deleteButton.current?.focus()
+    } else if (wasAsking.current === 'discard') {
+      const before = returnTo.current
+      const target = before instanceof HTMLElement && before !== document.body && before.isConnected ? before : document.getElementById(fieldId(form, 'title'))
+      target?.focus()
+    }
+    wasAsking.current = asking
+  }, [asking, form])
 
   const errors = useMemo<TaskErrors>(() => (attempted ? validateTask(draft.task, draft) : {}), [attempted, draft])
 
@@ -154,8 +174,10 @@ export function TaskCard({ task, isNew, onClose }: Props) {
 
   function requestClose() {
     if (asking) setAsking(null)
-    else if (isDirty(base, draft)) setAsking('discard')
-    else onClose()
+    else if (isDirty(base, draft)) {
+      returnTo.current = document.activeElement
+      setAsking('discard')
+    } else onClose()
   }
 
   function onSubmit(event: FormEvent) {
@@ -286,10 +308,13 @@ export function TaskCard({ task, isNew, onClose }: Props) {
                 <CheckboxField form={form} name="sent_to_cargo" label="נשלח ל-CARGO" checked={draft.task.sent_to_cargo} onChange={(sent_to_cargo) => change({ sent_to_cargo })} />
               </>
             ) : (
-              <div className="field-grid">
-                {text('product_name', 'שם מוצר', 'product_name', { error: errors.product })}
-                {text('product_sku', 'מק״ט', 'product_sku', { ltr: true })}
-              </div>
+              <>
+                <div className="field-grid">
+                  {text('product_name', 'שם מוצר', 'product_name', { error: errors.product })}
+                  {text('product_sku', 'מק״ט', 'product_sku', { ltr: true })}
+                </div>
+                <ProductImage task={base} images={images} />
+              </>
             )}
           </section>
         )}
@@ -304,6 +329,11 @@ export function TaskCard({ task, isNew, onClose }: Props) {
           </div>
           <TextAreaField form={form} name="ship_to" label="כתובת למשלוח" rows={2} value={draft.task.ship_to} onChange={(ship_to) => change({ ship_to })} />
         </details>
+
+        <section className="card-section" aria-labelledby={`${form}-h-images`}>
+          <h3 id={`${form}-h-images`}>תמונות</h3>
+          {isNew ? <p className="hint">אפשר להוסיף תמונות אחרי שהמשימה נשמרת.</p> : <TaskImages task={base} images={images} />}
+        </section>
 
         {asking === 'delete' ? (
           <footer className="card-actions" role="alert">
@@ -349,7 +379,7 @@ export function TaskCard({ task, isNew, onClose }: Props) {
                 >
                   {base.done_at === null ? 'בוצע' : 'סימון כלא בוצע'}
                 </button>
-                <button type="button" className="btn danger" onClick={() => setAsking('delete')}>
+                <button type="button" className="btn danger" ref={deleteButton} onClick={() => setAsking('delete')}>
                   מחק משימה
                 </button>
               </>
