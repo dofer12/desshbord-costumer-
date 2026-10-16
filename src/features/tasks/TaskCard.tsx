@@ -8,9 +8,13 @@ import { CheckboxField, SelectField, TextAreaField, TextField } from './cardFiel
 import { CopyButton } from './CopyButton'
 import { dialHref, taskTitle } from './display'
 import { fieldId } from './fieldId'
+import type { TaskEvent } from './gateways'
+import { History } from './History'
+import { actorName } from './historyText'
 import { KIND_LABEL, PRIORITIES, PRIORITY_LABEL, TASK_KINDS, type Task } from './model'
 import { changedFields, isDirty, mergeRemote, normalizedTask, toDraft, type Draft } from './taskForm'
-import { useDirectory, useHistory, useTasks } from './tasksContext'
+import { useDirectory, useTasks } from './tasksContext'
+import { useTaskHistory } from './useTaskHistory'
 import { glassixUrl, validateTask, type TaskErrors } from './validation'
 
 interface Props {
@@ -90,14 +94,12 @@ export function TaskCard({ task, isNew, onClose }: Props) {
   const softDelete = useTasks((state) => state.softDelete)
   const profiles = useDirectory((state) => state.profiles)
   const glassixTemplate = useDirectory((state) => state.settings.glassix_url_template)
-  const history = useHistory()
 
   const [base, setBase] = useState(task)
   const [draft, setDraft] = useState(() => toDraft(task))
   const [openedAt] = useState(task.updated_at)
   const [attempted, setAttempted] = useState(false)
   const [asking, setAsking] = useState<'discard' | 'delete' | null>(null)
-  const [updatedBy, setUpdatedBy] = useState<string | null>(null)
   const safeAnswer = useRef<HTMLButtonElement>(null)
   const deleteButton = useRef<HTMLButtonElement>(null)
   // What had the focus when the question about closing was asked, and which question was asked before.
@@ -113,25 +115,11 @@ export function TaskCard({ task, isNew, onClose }: Props) {
     setDraft(mergeRemote(draft, base, task))
   }
 
-  // And say who made it, from the history, unless it was the person themselves.
-  useEffect(() => {
-    if (isNew || task.updated_at === openedAt) return
-    let current = true
-    history(task.id).then(
-      (events) => {
-        if (!current) return
-        if (events.length === 0 || events[0].actor_id === me) setUpdatedBy(null)
-        else if (events[0].actor_id === null) setUpdatedBy('המערכת')
-        else setUpdatedBy(profiles.find((person) => person.id === events[0].actor_id)?.display_name ?? 'משתמש אחר')
-      },
-      () => {
-        if (current) setUpdatedBy(null)
-      },
-    )
-    return () => {
-      current = false
-    }
-  }, [history, isNew, me, openedAt, profiles, task.id, task.updated_at])
+  // The history is read again when the task changes, and it says who made the change, unless it was the person themselves.
+  // The server writes the adding of a picture on the history without changing the task, so the pictures count too.
+  const taskHistory = useTaskHistory(isNew ? null : base.id, `${base.updated_at}|${images.items?.length ?? 0}`)
+  const newest = taskHistory.events?.reduce<TaskEvent | null>((latest, event) => (latest === null || event.id > latest.id ? event : latest), null)
+  const updatedBy = !isNew && task.updated_at !== openedAt && newest && newest.actor_id !== me ? actorName(newest.actor_id, profiles) : null
 
   // A question puts the focus on the safe answer. When it is answered with no, the buttons of the question are
   // gone, and the focus goes back to where it was, so that it is not lost to the page behind the card.
@@ -334,6 +322,13 @@ export function TaskCard({ task, isNew, onClose }: Props) {
           <h3 id={`${form}-h-images`}>תמונות</h3>
           {isNew ? <p className="hint">אפשר להוסיף תמונות אחרי שהמשימה נשמרת.</p> : <TaskImages task={base} images={images} />}
         </section>
+
+        {!isNew && (
+          <section className="card-section" aria-labelledby={`${form}-h-history`}>
+            <h3 id={`${form}-h-history`}>היסטוריה</h3>
+            <History history={taskHistory} />
+          </section>
+        )}
 
         {asking === 'delete' ? (
           <footer className="card-actions" role="alert">

@@ -33,6 +33,9 @@ const LEFT_OUT_OF_THE_HISTORY = new Set(['updated_at', 'done_by', 'created_at', 
 
 type Changes = Record<string, [unknown, unknown]>
 
+/** The number of the next event: after the highest there is, whoever wrote the others. */
+const nextEventId = (events: TaskEvent[]) => events.reduce((highest, event) => Math.max(highest, event.id), 0) + 1
+
 export interface MemoryTasks {
   gateway: TasksGateway
   /** The rows of the pretend server, by id. */
@@ -71,9 +74,7 @@ export function createMemoryTasks(options: {
   }
 
   function addEvent(task: Task, type: TaskEventType, changes: Changes = {}) {
-    // After the highest id there is, whoever put the history there.
-    const id = events.reduce((highest, event) => Math.max(highest, event.id), 0) + 1
-    events.push({ id, task_id: task.id, actor_id: userId, type, changes, at: task.updated_at })
+    events.push({ id: nextEventId(events), task_id: task.id, actor_id: userId, type, changes, at: task.updated_at })
   }
 
   /** One event for each kind of change, as the trigger of the database writes them. */
@@ -236,9 +237,16 @@ export function createMemoryAttachments(options: {
   /** How the address of a picture is made. By default it only names the path. */
   signedUrl?: (path: string, picture: Blob | undefined) => string
   newId?: () => string
+  /** The history of the tasks, as the pretend server keeps it: adding and removing a picture is written on it, as the triggers of the database do. */
+  events?: TaskEvent[]
 }): MemoryAttachments {
   const now = options.now ?? (() => new Date())
   const newId = options.newId ?? (() => crypto.randomUUID())
+  const { events } = options
+
+  function log(taskId: string, type: 'attachment_added' | 'attachment_removed', changes: Changes) {
+    events?.push({ id: nextEventId(events), task_id: taskId, actor_id: options.userId, type, changes, at: now().toISOString() })
+  }
   const memory: MemoryAttachments = {
     items: [],
     blobs: new Map(),
@@ -264,6 +272,7 @@ export function createMemoryAttachments(options: {
         memory.blobs.set(attachment.storage_path, full)
         memory.blobs.set(attachment.thumb_path, thumb)
         memory.items.push(attachment)
+        log(taskId, 'attachment_added', { attachment: [null, { id, kind }] })
         return clone(attachment)
       },
       async remove(attachment) {
@@ -272,6 +281,7 @@ export function createMemoryAttachments(options: {
           memory.blobs.delete(path)
           memory.removedFiles.push(path)
         }
+        log(attachment.task_id, 'attachment_removed', { attachment: [{ id: attachment.id, kind: attachment.kind }, null] })
       },
       async signedUrl(path) {
         return options.signedUrl ? options.signedUrl(path, memory.blobs.get(path)) : `https://files.example/${path}?token=memory`

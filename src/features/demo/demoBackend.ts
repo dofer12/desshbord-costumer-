@@ -285,8 +285,9 @@ function createDemoEvents(tasks: Task[]): TaskEvent[] {
 /** The backend of the demo build: no server, the people and the tasks above, and everything in memory. */
 export function createDemoBackend(now: () => Date = () => new Date()): Backend {
   const tasks = createDemoTasks(now())
+  const memory = createMemoryTasks({ userId: ME, tasks, events: createDemoEvents(tasks), now, echo: true, live: true })
   return {
-    tasks: createMemoryTasks({ userId: ME, tasks, events: createDemoEvents(tasks), now, echo: true, live: true }).gateway,
+    tasks: memory.gateway,
     directory: createMemoryDirectory({
       statuses: demoStatuses(),
       profiles: [DEMO_PROFILE, ...demoColleagues()],
@@ -297,6 +298,8 @@ export function createDemoBackend(now: () => Date = () => new Date()): Backend {
       now,
       // A picture that was added in the demo is shown from the memory of the browser.
       signedUrl: (_path, picture) => (picture ? URL.createObjectURL(picture) : ''),
+      // A picture is written on the history of its task, as the database does.
+      events: memory.events,
     }).gateway,
     outbox: () => createMemoryOutboxStorage(),
   }

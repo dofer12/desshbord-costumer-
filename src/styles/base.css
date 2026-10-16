@@ -1050,6 +1050,47 @@ a.btn {
   color: var(--muted);
 }
 
+/* The history of a task. */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-item {
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--line);
+}
+
+.history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+}
+
+.history-head time {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.history-line {
+  margin: 2px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.history-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 /* A demo build (npm run demo): a strip across the top, with room made for it. */
 .demo-banner {
   position: fixed;

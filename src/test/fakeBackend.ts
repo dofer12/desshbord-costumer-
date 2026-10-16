@@ -23,7 +23,8 @@ export interface FakeBackend {
 export function createFakeBackend(options: { tasks?: Task[]; now?: () => Date } = {}): FakeBackend {
   const tasks = createFakeTasks({ tasks: options.tasks, now: options.now })
   const directory = createFakeDirectory()
-  const attachments = createFakeAttachments()
+  // A picture is written on the history of its task, as the database does.
+  const attachments = createFakeAttachments({ events: tasks.events })
   const outboxes = new Map<string, OutboxStorage>()
   return {
     tasks,

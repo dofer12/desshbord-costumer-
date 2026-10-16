@@ -291,6 +291,18 @@ describe('the card of a task', () => {
     expect(card().queryByText(/^עודכן על ידי/)).not.toBeInTheDocument()
   })
 
+  it('names the person who made the newest change, and not one who made an older change', async () => {
+    const { backend } = openCard('/tasks/a', [a])
+    await findCard()
+    const at = new Date().toISOString()
+    backend.tasks.events.push(
+      { id: 90, task_id: 'a', actor_id: null, type: 'updated', changes: {}, at },
+      { id: 91, task_id: 'a', actor_id: OWNER.id, type: 'updated', changes: {}, at },
+    )
+    act(() => backend.tasks.pushRemote({ ...a, notes: 'x', updated_at: ahead(HOUR) }))
+    expect(await card().findByText('עודכן על ידי הבעלים')).toBeInTheDocument()
+  })
+
   it('names the system when the change has no person behind it', async () => {
     const { backend } = openCard('/tasks/a', [a])
     await findCard()

@@ -204,11 +204,12 @@ export interface FakeAttachments {
   setOffline(offline: boolean): void
 }
 
-export function createFakeAttachments(options: { userId?: string } = {}): FakeAttachments {
+export function createFakeAttachments(options: { userId?: string; events?: TaskEvent[] } = {}): FakeAttachments {
   let counter = 0
   const memory = createMemoryAttachments({
     userId: options.userId ?? DANA.id,
     newId: () => `attachment-${++counter}`,
+    events: options.events,
   })
   const failures = createFailures()
   return {

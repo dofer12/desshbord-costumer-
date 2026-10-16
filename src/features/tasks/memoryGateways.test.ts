@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Profile } from '../auth/types'
-import type { TaskChangeEvent } from './gateways'
+import type { TaskChangeEvent, TaskEvent } from './gateways'
 import { createMemoryAttachments, createMemoryDirectory, createMemoryTasks } from './memoryGateways'
 import { newTask, type Task } from './model'
 
@@ -309,5 +309,43 @@ describe('the in-memory attachments gateway', () => {
     const memory = createMemoryAttachments({ userId: 'me', newId: () => `id-${++n}` })
     expect((await memory.gateway.add('task-1', files())).id).toBe('id-1')
     expect((await memory.gateway.add('task-1', files())).id).toBe('id-2')
+  })
+
+  describe('the history that it writes, as the triggers of the database do', () => {
+    it('writes the adding and the removing of a picture on the history that it is given, by the person who did it', async () => {
+      const events: TaskEvent[] = []
+      const memory = createMemoryAttachments({ userId: 'me', now: () => NOW, events })
+      const added = await memory.gateway.add('task-1', files('product'))
+      await memory.gateway.remove(added)
+      expect(events).toEqual([
+        { id: 1, task_id: 'task-1', actor_id: 'me', type: 'attachment_added', changes: { attachment: [null, { id: added.id, kind: 'product' }] }, at: NOW.toISOString() },
+        { id: 2, task_id: 'task-1', actor_id: 'me', type: 'attachment_removed', changes: { attachment: [{ id: added.id, kind: 'product' }, null] }, at: NOW.toISOString() },
+      ])
+    })
+
+    it('numbers them after the events that are already there, whoever wrote them', async () => {
+      const events: TaskEvent[] = [{ id: 7, task_id: 'task-1', actor_id: null, type: 'created', changes: {}, at: NOW.toISOString() }]
+      const memory = createMemoryAttachments({ userId: 'me', now: () => NOW, events })
+      await memory.gateway.add('task-1', files())
+      expect(events.map((event) => event.id)).toEqual([7, 8])
+    })
+
+    it('shares the history with the tasks that it belongs to', async () => {
+      const tasks = createMemoryTasks({ userId: 'me', now: () => NOW })
+      const memory = createMemoryAttachments({ userId: 'me', now: () => NOW, events: tasks.events })
+      await tasks.gateway.upsert('task-1', { title: 'x' })
+      await memory.gateway.add('task-1', files())
+      await tasks.gateway.upsert('task-1', { notes: 'y' })
+      expect((await tasks.gateway.loadHistory('task-1')).map((event) => [event.id, event.type])).toEqual([
+        [3, 'updated'],
+        [2, 'attachment_added'],
+        [1, 'created'],
+      ])
+    })
+
+    it('writes nothing when it was not given a history', async () => {
+      const memory = createMemoryAttachments({ userId: 'me', now: () => NOW })
+      await expect(memory.gateway.add('task-1', files())).resolves.toBeDefined()
+    })
   })
 })
