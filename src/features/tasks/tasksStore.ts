@@ -1,12 +1,18 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
-import { isRetryable, toHebrewLoadError, toHebrewSaveFailure } from './errors'
+import { isConnectionLost, isRetryable, noAnswerInTime, toHebrewLoadError, toHebrewSaveFailure } from './errors'
 import type { TasksGateway } from './gateways'
-import { SERVER_OWNED_FIELDS, newTask, taskToPatch, type Task, type TaskPatch } from './model'
+import { SERVER_OWNED_FIELDS, isWholeRow, newTask, taskToPatch, type Task, type TaskPatch } from './model'
 import type { OutboxEntry, OutboxStorage } from './outbox'
 import { normalizeQuery } from './search'
 
 /** How often the changes that are waiting are tried again while the app is open. */
 export const FLUSH_INTERVAL_MS = 30_000
+
+/** How long the tasks wait to be read again after a row came that could not be kept, so that a burst of them is read once. */
+export const REREAD_DELAY_MS = 300
+
+/** How long a change may take to be sent. A connection that carries nothing is given up on, so that it does not hold every change behind it. */
+export const REQUEST_TIMEOUT_MS = 20_000
 
 export interface TasksState {
   /** The tasks as the person sees them: the row of the server with the changes that are still waiting on top. */
@@ -54,9 +60,10 @@ function cleanPatch(patch: TaskPatch): TaskPatch {
   ) as TaskPatch
 }
 
-export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxStorage; now?: () => Date }): TasksStore {
+export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxStorage; now?: () => Date; requestTimeoutMs?: number }): TasksStore {
   const { gateway, storage } = deps
   const now = deps.now ?? (() => new Date())
+  const timeoutMs = deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS
 
   /** The last row that the server gave for each task. */
   let server = new Map<string, Task>()
@@ -70,6 +77,7 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
   let saving: Promise<void> = Promise.resolve()
   let unsubscribe: (() => void) | null = null
   let timer: ReturnType<typeof setInterval> | null = null
+  let rereadTimer: ReturnType<typeof setTimeout> | null = null
   let listeners: Array<[EventTarget, string, EventListener]> = []
   let wasDown = false
 
@@ -187,25 +195,48 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
       void flush()
     }
 
+    /** One request, with a limit: when it is not answered in time it is told to stop and counts as a request that did not get to the server. */
+    async function withinTime<T>(send: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      const controller = new AbortController()
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const late = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(noAnswerInTime())
+        }, timeoutMs)
+      })
+      try {
+        return await Promise.race([send(controller.signal), late])
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
     /** The sending itself. It lets go of `running` at the very moment that it finds nothing more to send. */
     async function sendAll(): Promise<void> {
+      /** The changes that failed for a reason that may pass: they wait for the next run, and the others go on. */
+      const waiting = new Set<OutboxEntry>()
       try {
         for (;;) {
           // The storage first, so that nothing is sent that a crash could make the app forget.
           await restored
           await saving
-          const entry = entries.find((e) => !e.failure)
+          const entry = entries.find((e) => !e.failure && !waiting.has(e))
           if (!entry) return
           const sent = { ...entry.patch }
           let row: Task
           try {
-            row = await gateway.upsert(entry.id, sent)
+            row = await withinTime((signal) => gateway.upsert(entry.id, sent, { signal }))
           } catch (err) {
             if (isRetryable(err)) {
-              // No connection, or a server that is busy: keep everything, and let the next moment try again.
+              // Keep everything, and let the next moment try again.
               entry.attempts += 1
               persist()
-              return
+              // No connection: the others would fail the same way, and wait as long.
+              if (isConnectionLost(err)) return
+              // A server that fails on this change may do well with the others: only this one waits.
+              waiting.add(entry)
+              continue
             }
             entry.failure = toHebrewSaveFailure(err)
             persist()
@@ -310,7 +341,18 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
       },
 
       applyRemote(task) {
-        acceptRow(task)
+        const known = server.get(task.id)
+        if (!known && !isWholeRow(task)) {
+          // A change of a task that is not here, and without some of its columns (a long text that the change
+          // did not touch): half a row is not kept, the tasks are read again, and the task comes whole if it belongs.
+          rereadTimer ??= setTimeout(() => {
+            rereadTimer = null
+            void get().load()
+          }, REREAD_DELAY_MS)
+          return
+        }
+        // What the row leaves out is what did not change: it stays as it was.
+        acceptRow(known ? { ...known, ...task } : task)
         publish([task.id])
       },
 
@@ -361,6 +403,8 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
         unsubscribe = null
         if (timer !== null) clearInterval(timer)
         timer = null
+        if (rereadTimer !== null) clearTimeout(rereadTimer)
+        rereadTimer = null
         for (const [target, type, handler] of listeners) target.removeEventListener(type, handler)
         listeners = []
         wasDown = false

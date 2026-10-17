@@ -70,7 +70,8 @@ export interface TasksGateway {
   /** The server-side search over all tasks that are not deleted: at most 200 rows, newest change first. */
   search(query: string): Promise<Task[]>
   /** Creates or changes a task. Safe to send again: the id is made by the app, and the patch holds only the changed fields. */
-  upsert(id: string, patch: TaskPatch): Promise<Task>
+  /** `options.signal` stops the request: the store gives up on one that is never answered. */
+  upsert(id: string, patch: TaskPatch, options?: { signal?: AbortSignal }): Promise<Task>
   /** Calls back for every row that changes anywhere, and with `false` whenever the live connection is lost. */
   subscribe(onEvent: (event: TaskChangeEvent) => void, onState: (live: boolean) => void): () => void
   /** The history of a task, newest first. */

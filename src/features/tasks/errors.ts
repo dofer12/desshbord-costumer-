@@ -1,4 +1,4 @@
-import { classifyProfileFailure } from '../auth/errors'
+import { classifyProfileFailure, isNetworkError } from '../auth/errors'
 
 /**
  * True when a request failed for a reason that may pass: no connection, a slow or overloaded
@@ -8,6 +8,20 @@ import { classifyProfileFailure } from '../auth/errors'
  */
 export function isRetryable(err: unknown): boolean {
   return classifyProfileFailure(err) === 'unreachable'
+}
+
+/**
+ * True when the request did not get to the server, or no answer came back (status 0): whatever else is
+ * waiting to be sent would fail the same way, so there is no use in trying it now.
+ */
+export function isConnectionLost(err: unknown): boolean {
+  const status = err && typeof err === 'object' ? (err as { status?: unknown }).status : undefined
+  return isNetworkError(err) || status === 0
+}
+
+/** What a request that was given up on looks like: like one that could not reach the server. */
+export function noAnswerInTime(): Error {
+  return Object.assign(new Error('The server did not answer in time.'), { status: 0 })
 }
 
 /** True when the tables are missing or not granted, which means that the setup SQL was not run. */

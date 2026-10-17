@@ -25,6 +25,8 @@ interface Sent {
   url: URL
   headers: Headers
   body: string
+  /** The signal that the library gave to `fetch`: the way to stop the request. */
+  signal: AbortSignal | null
 }
 
 const json = (status: number, body: unknown) =>
@@ -44,6 +46,7 @@ function harness(respond: (sent: Sent) => Response | Promise<Response>) {
           url: new URL(String(input)),
           headers: new Headers(init?.headers),
           body: typeof body === 'string' ? body : body ? '[binary]' : '',
+          signal: init?.signal ?? null,
         }
         sent.push(request)
         return respond(request)
@@ -241,6 +244,34 @@ describe('upsert', () => {
     const h = harness(echo)
     await h.tasks.upsert('task-1', { title: 'new' })
     expect(h.sent[0].headers.get('accept')).toBe('application/vnd.pgrst.object+json')
+  })
+
+  describe('a request that is told to stop', () => {
+    /** A server that never answers: the request ends only when the signal of the request says so. */
+    const silent = (sent: Sent) =>
+      new Promise<Response>((_resolve, reject) => {
+        sent.signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')))
+      })
+
+    it('stops when the signal that it was given is aborted, and reads as a request that did not get to the server', async () => {
+      const h = harness(silent)
+      const controller = new AbortController()
+      const saving = h.tasks.upsert('task-1', { title: 'new' }, { signal: controller.signal }).catch((e: unknown) => e)
+      await vi.waitFor(() => expect(h.sent).toHaveLength(1))
+      controller.abort()
+      const error = await saving
+      expect(error).toBeInstanceOf(Error)
+      expect(error).toMatchObject({ status: 0 })
+      expect(isRetryable(error)).toBe(true)
+    })
+
+    it('sends the same request with or without a signal', async () => {
+      const h = harness(echo)
+      await h.tasks.upsert('task-1', { title: 'new' })
+      await h.tasks.upsert('task-1', { title: 'new' }, { signal: new AbortController().signal })
+      expect(h.sent[1].body).toBe(h.sent[0].body)
+      expect(h.sent[1].url.href).toBe(h.sent[0].url.href)
+    })
   })
 })
 

@@ -3,7 +3,8 @@ import { createFakeTasks, networkError, refusal, type FakeTasks } from '../../te
 import { SYNC_MESSAGES } from './errors'
 import { newTask, taskToPatch, type Task } from './model'
 import { createMemoryOutboxStorage, type OutboxEntry, type OutboxStorage } from './outbox'
-import { createTasksStore } from './tasksStore'
+import { normalizedTask, toDraft } from './taskForm'
+import { createTasksStore, REQUEST_TIMEOUT_MS, REREAD_DELAY_MS } from './tasksStore'
 
 const NOW = new Date('2026-10-15T12:00:00.000Z')
 
@@ -16,6 +17,11 @@ function task(id: string, patch: Partial<Task> = {}): Task {
     updated_at: '2026-10-01T08:00:00.000Z',
     ...patch,
   }
+}
+
+/** A row as the live connection can bring it: without some columns. The database leaves out a long text that a change did not touch. */
+function without(row: Task, ...columns: Array<keyof Task>): Task {
+  return Object.fromEntries(Object.entries(row).filter(([column]) => !columns.includes(column as keyof Task))) as unknown as Task
 }
 
 /** Lets everything that is waiting on a resolved promise, a storage write or a zero timer run. */
@@ -289,6 +295,81 @@ describe('flush', () => {
     t.get().update('a', { notes: 'x' })
     await t.get().flush()
     expect(t.get()).toMatchObject({ pending: 1, failed: [] })
+  })
+
+  it('does not let a change that the server fails on hold the others behind it, and sends it at the next moment', async () => {
+    const t = setup({ tasks: [task('a'), task('b')] })
+    await t.get().load()
+    t.fake.failNext(refusal(503, 'busy'))
+    t.get().update('a', { notes: 'one' })
+    t.get().update('b', { notes: 'two' })
+    await t.get().flush()
+    expect(t.fake.rows.get('b')?.notes).toBe('two')
+    expect(t.get()).toMatchObject({ pending: 1, failed: [] })
+    // Each change is tried once in a run: the one that failed is not asked again straight away.
+    expect(t.fake.calls.upsert).toBe(2)
+    expect((await t.storage.load()).map((e) => [e.id, e.attempts])).toEqual([['a', 1]])
+
+    await t.get().flush()
+    expect(t.fake.rows.get('a')?.notes).toBe('one')
+    expect(t.get().pending).toBe(0)
+  })
+
+  describe('a request that is never answered', () => {
+    /** Makes `upsert` hang for ever until told otherwise, and keeps the signal that each call was given. */
+    function hangUpserts(fake: FakeTasks) {
+      const upsert = fake.gateway.upsert
+      const signals: Array<AbortSignal | undefined> = []
+      const state = { hang: true }
+      fake.gateway.upsert = (id, patch, options) => {
+        signals.push(options?.signal)
+        return state.hang ? new Promise<Task>(() => undefined) : upsert(id, patch, options)
+      }
+      return { signals, state }
+    }
+
+    it('is given up on after the limit, and the request is told to stop', async () => {
+      vi.useFakeTimers()
+      const t = setup({ tasks: [task('a')] })
+      await t.get().load()
+      const { signals } = hangUpserts(t.fake)
+      t.get().update('a', { notes: 'x' })
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1)
+      expect(signals[0]?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signals[0]?.aborted).toBe(true)
+      expect(t.get().pending).toBe(1)
+      expect((await t.storage.load()).map((e) => [e.id, e.attempts])).toEqual([['a', 1]])
+    })
+
+    it('does not hold the changes behind it for ever: the next moment sends them', async () => {
+      vi.useFakeTimers()
+      const t = setup({ tasks: [task('a'), task('b')] })
+      await t.get().load()
+      const { signals, state } = hangUpserts(t.fake)
+      t.get().update('a', { notes: 'one' })
+      t.get().update('b', { notes: 'two' })
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS)
+      // The connection carries nothing, so the others are not tried in this run: each would wait as long.
+      expect(signals).toHaveLength(1)
+      expect(t.get().pending).toBe(2)
+
+      state.hang = false
+      await t.get().flush()
+      expect(t.get().pending).toBe(0)
+      expect(t.fake.rows.get('a')?.notes).toBe('one')
+      expect(t.fake.rows.get('b')?.notes).toBe('two')
+    })
+
+    it('does not let an answer that comes late change anything, and leaves no timer running when the answer is in time', async () => {
+      vi.useFakeTimers()
+      const t = setup({ tasks: [task('a')] })
+      await t.get().load()
+      t.get().update('a', { notes: 'x' })
+      await t.get().flush()
+      expect(t.get().pending).toBe(0)
+      expect(vi.getTimerCount()).toBe(0)
+    })
   })
 
   it('puts a change that the server refuses aside with a message, and goes on with the next', async () => {
@@ -600,6 +681,71 @@ describe('applyRemote', () => {
     for (const side of [a, b]) {
       expect(side.get().tasks.t).toMatchObject({ title: 'from A', notes: 'from B' })
     }
+  })
+
+  describe('a row that came without some of its columns', () => {
+    it('keeps what it knew of the columns that were left out, and takes what the row says', async () => {
+      const t = setup({ tasks: [task('a', { notes: 'a long note', ship_to: 'a long address' })] })
+      await t.get().load()
+      t.get().applyRemote(without(task('a', { title: 'renamed', updated_at: '2026-10-15T11:00:00.000Z' }), 'notes', 'ship_to'))
+      expect(t.get().tasks.a).toMatchObject({ title: 'renamed', notes: 'a long note', ship_to: 'a long address' })
+    })
+
+    it('leaves a task that the card can still be saved from', async () => {
+      const t = setup({ tasks: [task('a', { notes: 'a long note' })] })
+      await t.get().load()
+      t.get().applyRemote(without(task('a', { priority: 'high', updated_at: '2026-10-15T11:00:00.000Z' }), 'notes'))
+      // The card trims every text when it saves: none of them may be missing.
+      expect(() => normalizedTask(toDraft(t.get().tasks.a))).not.toThrow()
+      expect(normalizedTask(toDraft(t.get().tasks.a)).notes).toBe('a long note')
+    })
+
+    it('does not keep half a row for a task that it does not know, and reads the tasks again instead', async () => {
+      vi.useFakeTimers()
+      const t = setup({ tasks: [task('a')] })
+      await t.get().load()
+      t.fake.rows.set('b', task('b', { notes: 'the whole note' }))
+      const loads = t.fake.calls.loadInitial
+      t.get().applyRemote(without(task('b'), 'notes'))
+      expect(t.get().tasks.b).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(REREAD_DELAY_MS)
+      expect(t.fake.calls.loadInitial).toBe(loads + 1)
+      expect(t.get().tasks.b?.notes).toBe('the whole note')
+    })
+
+    it('reads once for a burst of such rows', async () => {
+      vi.useFakeTimers()
+      const t = setup({ tasks: [task('a')] })
+      await t.get().load()
+      const loads = t.fake.calls.loadInitial
+      for (const id of ['b', 'c', 'd']) t.get().applyRemote(without(task(id), 'notes'))
+      await vi.advanceTimersByTimeAsync(REREAD_DELAY_MS * 5)
+      expect(t.fake.calls.loadInitial).toBe(loads + 1)
+    })
+
+    it('does not read again after the store was stopped', async () => {
+      vi.useFakeTimers()
+      const t = setup({ tasks: [task('a')] })
+      await t.get().load()
+      t.get().start()
+      const loads = t.fake.calls.loadInitial
+      t.get().applyRemote(without(task('b'), 'notes'))
+      t.get().stop()
+      await vi.advanceTimersByTimeAsync(REREAD_DELAY_MS * 5)
+      expect(t.fake.calls.loadInitial).toBe(loads)
+    })
+
+    it('takes a row that has no digits of the phone, which the database keeps and a task that is only here does not have yet', async () => {
+      const t = setup()
+      t.get().applyRemote(without(task('x', { title: 'no digits' }), 'customer_phone_digits'))
+      expect(t.get().tasks.x?.title).toBe('no digits')
+    })
+
+    it('takes a row that has all its columns, as before', async () => {
+      const t = setup()
+      t.get().applyRemote(task('x', { title: 'whole' }))
+      expect(t.get().tasks.x.title).toBe('whole')
+    })
   })
 })
 

@@ -66,6 +66,18 @@ export interface Task {
   legacy_handler: string
 }
 
+/** The columns of a row of the `tasks` table. */
+const COLUMNS = Object.keys(newTask('', '')) as Array<keyof Task>
+
+/**
+ * Whether a row has all its columns. A change that comes through the live connection may not: the
+ * database leaves out a long text (it is stored apart) that the change did not touch.
+ * `customer_phone_digits` is not asked for: a task that is only here has none yet.
+ */
+export function isWholeRow(row: Partial<Task>): row is Task {
+  return COLUMNS.every((column) => column === 'customer_phone_digits' || column in row)
+}
+
 /** The fields that a change may carry. The others are kept by the database itself. */
 export type TaskPatch = Partial<
   Omit<Task, 'id' | 'created_by' | 'created_at' | 'updated_at' | 'done_by' | 'customer_phone_digits'>

@@ -105,12 +105,9 @@ export function createSupabaseTasksGateway(client: SupabaseClient, options: { ma
       return data as Task[]
     },
 
-    async upsert(id, patch) {
-      const { data, error, status } = await client
-        .from('tasks')
-        .upsert({ id, ...cleanPatch(patch) }, { onConflict: 'id' })
-        .select()
-        .single()
+    async upsert(id, patch, options) {
+      const request = client.from('tasks').upsert({ id, ...cleanPatch(patch) }, { onConflict: 'id' }).select()
+      const { data, error, status } = await (options?.signal ? request.abortSignal(options.signal) : request).single()
       if (error) throw apiError(error, status)
       return data as Task
     },
