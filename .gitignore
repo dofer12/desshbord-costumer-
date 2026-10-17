@@ -28,3 +28,7 @@ release
 *.jks
 *.keystore
 .serena/
+
+# The Supabase CLI: the environment of a function that is served here, and the cache of the project that is linked
+supabase/functions/.env
+supabase/.temp/
