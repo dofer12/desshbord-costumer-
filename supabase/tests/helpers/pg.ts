@@ -9,12 +9,20 @@ const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'migrations')
 const SUPABASE_STUB = `
 create role anon nologin;
 create role authenticated nologin;
+-- The role of the secret key, which the Edge Functions use.
+create role service_role nologin;
 create schema auth;
 create table auth.users (
   id uuid primary key default gen_random_uuid(),
   email text,
   raw_user_meta_data jsonb not null default '{}'::jsonb,
   raw_app_meta_data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+-- Only what the migrations use of GoTrue's table of sessions: whose it is.
+create table auth.sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
   created_at timestamptz not null default now()
 );
 create function auth.uid() returns uuid language sql stable as $$

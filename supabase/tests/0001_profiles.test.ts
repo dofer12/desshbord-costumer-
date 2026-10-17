@@ -84,7 +84,9 @@ describe('handle_new_user', () => {
   })
 
   it('removes the profile when the auth user is deleted', async () => {
-    const id = await addUser(db, 'owner@example.com')
+    // The first user stays: the last administrator cannot be deleted (0003_admin.sql).
+    await addUser(db, 'owner@example.com')
+    const id = await addUser(db, 'dana@example.com', { appMeta: { role: 'employee' } })
     await db.query('delete from auth.users where id = $1', [id])
     expect(await profileOf(id)).toBeUndefined()
   })
@@ -164,7 +166,9 @@ describe('membership helpers', () => {
   })
 
   it('treats a deactivated user as neither member nor admin', async () => {
-    const admin = await addUser(db, 'owner@example.com')
+    // The first user stays an administrator: the last one cannot be blocked (0003_admin.sql).
+    await addUser(db, 'owner@example.com')
+    const admin = await addUser(db, 'second@example.com', { appMeta: { role: 'admin' } })
     await db.query('update public.profiles set is_active = false where id = $1', [admin])
     expect((await as(db, { id: admin }, flags)).rows[0]).toEqual({ m: false, a: false })
   })
