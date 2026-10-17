@@ -220,6 +220,29 @@ a:focus-visible {
   border-block-end-color: var(--accent);
 }
 
+/* The number on a tab: how many tasks wait there. It turns red when one of them is late. */
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+.tab-badge-late {
+  color: var(--crit);
+  background: var(--crit-soft);
+  box-shadow: inset 0 0 0 1px var(--crit);
+}
+
 .app-bar-end {
   grid-area: end;
   display: flex;
@@ -279,6 +302,44 @@ a:focus-visible {
   flex: 1;
   padding: 16px max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
     max(16px, env(safe-area-inset-left));
+}
+
+/*
+ * On a phone the tabs are a bar at the bottom of the screen, where the thumb is. The card of a task
+ * and the dialogs are above it (they are fixed with a higher layer), and the page leaves room for it.
+ */
+@media (max-width: 639px) {
+  .app-bar {
+    grid-template-areas: 'title end';
+  }
+
+  .app-tabs {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 5;
+    gap: 0;
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--surface);
+    border-block-start: 1px solid var(--line);
+  }
+
+  .app-tab {
+    flex: 1;
+    justify-content: center;
+    min-height: 56px;
+    padding: 0 8px;
+    border-block-end: 0;
+    border-block-start: 3px solid transparent;
+  }
+
+  .app-tab[aria-current='page'] {
+    border-block-start-color: var(--accent);
+  }
+
+  .app-main {
+    padding-block-end: calc(56px + 24px + env(safe-area-inset-bottom));
+  }
 }
 
 .user-menu {

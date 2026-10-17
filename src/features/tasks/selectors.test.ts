@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { newTask, type Task } from './model'
-import { filterTasks, isOverdue, paginate, sortByChoice, sortTasks, statusCounts, type SortChoice, type TaskFilter } from './selectors'
+import { MY_OPEN_TASKS, filterTasks, isOverdue, paginate, sortByChoice, sortTasks, statusCounts, type SortChoice, type TaskFilter } from './selectors'
 
 const ME = 'user-me'
 
@@ -114,6 +114,20 @@ describe('filterTasks', () => {
       expect(found('', list)).toEqual(['a', 'b'])
       expect(found('   ', list)).toEqual(['a', 'b'])
     })
+  })
+})
+
+describe('MY_OPEN_TASKS', () => {
+  // What the tasks screen shows at first, and the number on its tab.
+  it('is the tasks of the person that are not done and not deleted', () => {
+    const tasks = [
+      task('mine', { assignee_id: ME }),
+      task('theirs', { assignee_id: 'user-2' }),
+      task('nobodys', { assignee_id: null }),
+      task('done', { assignee_id: ME, done_at: '2026-10-10T10:00:00Z' }),
+      task('deleted', { assignee_id: ME, deleted_at: '2026-10-11T10:00:00Z' }),
+    ]
+    expect(ids(filterTasks(tasks, MY_OPEN_TASKS, ME))).toEqual(['mine'])
   })
 })
 

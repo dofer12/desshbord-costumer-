@@ -53,6 +53,7 @@ export function demoColleagues(): Profile[] {
     role: 'employee',
     is_active: true,
     must_change_password: false,
+    default_remind_min: 15,
   })
   return [colleague('dana', 'דנה כהן'), colleague('avi', 'אבי לוי'), colleague('michal', 'מיכל ברק')]
 }

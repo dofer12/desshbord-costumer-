@@ -11,6 +11,7 @@ const person = (id: string, display_name: string, is_active = true): Profile => 
   role: 'employee',
   is_active,
   must_change_password: false,
+  default_remind_min: 15,
 })
 
 const NAMES: Names = {

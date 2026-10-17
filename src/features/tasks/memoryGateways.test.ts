@@ -226,6 +226,7 @@ describe('the in-memory directory gateway', () => {
     role: 'employee',
     is_active: true,
     must_change_password: false,
+    default_remind_min: 15,
   })
 
   it('returns copies of the statuses, the people and the settings, and fills in default settings', async () => {

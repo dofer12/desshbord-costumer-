@@ -13,6 +13,9 @@ export interface TaskFilter {
   text: string
 }
 
+/** What the tasks screen shows at first, and what the number on its tab counts: the open tasks of the person who is signed in. */
+export const MY_OPEN_TASKS: TaskFilter = { statusKey: null, assignee: 'me', shipMethod: null, state: 'open', text: '' }
+
 const TEXT_FIELDS = [
   'title',
   'customer_name',

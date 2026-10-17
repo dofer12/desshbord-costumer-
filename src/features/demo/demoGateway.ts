@@ -12,6 +12,7 @@ export const DEMO_PROFILE: Profile = {
   role: 'admin',
   is_active: true,
   must_change_password: false,
+  default_remind_min: 15,
 }
 
 /**

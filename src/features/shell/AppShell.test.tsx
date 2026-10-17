@@ -9,11 +9,20 @@ import { createAuthStore } from '../auth/authStore'
 import { AUTH_MESSAGES } from '../auth/errors'
 import type { Profile } from '../auth/types'
 import { createDirectoryStore } from '../tasks/directoryStore'
+import { newTask, type Task } from '../tasks/model'
 import { TasksContext } from '../tasks/tasksContext'
 import { createTasksStore } from '../tasks/tasksStore'
 import { AppShell } from './AppShell'
 
-async function renderShell(options: { path?: string; profile?: Profile } = {}) {
+/** Friday 16 October 2026, 12:00 in Jerusalem (summer time): today ends at 21:00 UTC. */
+const NOON = '2026-10-16T09:00:00.000Z'
+
+async function renderShell(options: { path?: string; profile?: Profile; tasks?: Task[]; now?: string } = {}) {
+  // Only the clock is pretended, so that the tabs can be tried at a time of the day; the timers are real.
+  if (options.now) {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(options.now))
+  }
   const profile = options.profile ?? DANA
   const gateway = createFakeGateway()
   gateway.getStoredUserId.mockResolvedValue(profile.id)
@@ -28,15 +37,19 @@ async function renderShell(options: { path?: string; profile?: Profile } = {}) {
   // The store reads what an earlier run left in its storage in its first moments, and that would
   // overwrite the counts that a test puts in. The normal state of the app is a live connection.
   await tasks.getState().flush()
-  tasks.setState({ live: true })
+  tasks.setState({ live: true, tasks: Object.fromEntries((options.tasks ?? []).map((t) => [t.id, t])) })
   const view = render(
     <AuthProvider store={auth}>
       <TasksContext value={{ tasks, directory, attachments: fake.backend.attachments, history: fake.backend.tasks.loadHistory }}>
         <MemoryRouter initialEntries={[options.path ?? '/tasks']}>
           <Routes>
             <Route element={<AppShell serverHost="test.supabase.co" />}>
+              <Route path="today" element={<p>the today page</p>} />
+              <Route path="today/:id" element={<p>a today card</p>} />
               <Route path="tasks" element={<p>the tasks page</p>} />
               <Route path="tasks/:id" element={<p>a task card</p>} />
+              <Route path="calendar" element={<p>the calendar page</p>} />
+              <Route path="calendar/:id" element={<p>a calendar card</p>} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -52,22 +65,161 @@ afterEach(() => {
 })
 
 describe('the tabs', () => {
-  it('are in a navigation landmark, with the current one marked', async () => {
+  const tabs = () => within(screen.getByRole('navigation', { name: 'ניווט ראשי' })).getAllByRole('link')
+  const current = () => tabs().filter((tab) => tab.getAttribute('aria-current') === 'page').map((tab) => tab.textContent)
+
+  it('are Today, Tasks and Calendar, in this order, in a navigation landmark', async () => {
     await renderShell()
-    const nav = screen.getByRole('navigation', { name: 'ניווט ראשי' })
-    expect(within(nav).getByRole('link', { name: 'משימות' })).toHaveAttribute('aria-current', 'page')
+    expect(tabs().map((tab) => tab.textContent)).toEqual(['היום', 'משימות', 'יומן'])
+    expect(tabs().map((tab) => tab.getAttribute('href'))).toEqual(['/today', '/tasks', '/calendar'])
   })
 
-  it('keep the tasks tab current on the page of one task, and show the page that the route gives', async () => {
-    await renderShell({ path: '/tasks/abc' })
-    expect(screen.getByRole('link', { name: 'משימות' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByText('a task card')).toBeInTheDocument()
+  it.each([
+    ['/today', 'היום'],
+    ['/tasks', 'משימות'],
+    ['/calendar', 'יומן'],
+  ])('mark %s as the current one, and no other', async (path, label) => {
+    await renderShell({ path })
+    expect(current()).toEqual([label])
   })
 
-  it('lead to the tasks screen', async () => {
+  it.each([
+    ['/today/abc', 'היום', 'a today card'],
+    ['/tasks/abc', 'משימות', 'a task card'],
+    ['/calendar/abc', 'יומן', 'a calendar card'],
+  ])('keep the tab current on the page of one task at %s, and show the page that the route gives', async (path, label, page) => {
+    await renderShell({ path })
+    expect(current()).toEqual([label])
+    expect(screen.getByText(page)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['היום', 'the today page'],
+    ['משימות', 'the tasks page'],
+    ['יומן', 'the calendar page'],
+  ])('lead to the %s screen', async (label, page) => {
     await renderShell({ path: '/tasks/abc' })
-    await userEvent.setup().click(screen.getByRole('link', { name: 'משימות' }))
-    expect(screen.getByText('the tasks page')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('link', { name: label }))
+    expect(screen.getByText(page)).toBeInTheDocument()
+    expect(current()).toEqual([label])
+  })
+})
+
+describe('the numbers on the tabs', () => {
+  // Friday noon in Jerusalem. Today ends at 21:00 UTC.
+  const own = (id: string, patch: Partial<Task> = {}): Task => ({ ...newTask(DANA.id, id), title: id, assignee_id: DANA.id, ...patch })
+  const link = (name: string) => screen.getByRole('link', { name })
+  const badge = (name: string) => within(link(name)).queryByText(/^\d+\+?$/)
+
+  const week: Task[] = [
+    own('late', { due_at: '2026-10-16T05:00:00.000Z' }),
+    own('later', { due_at: '2026-10-16T15:00:00.000Z' }),
+    own('tomorrow', { due_at: '2026-10-17T07:00:00.000Z' }),
+    own('undated'),
+    own('done', { due_at: '2026-10-16T06:00:00.000Z', done_at: '2026-10-16T07:00:00.000Z' }),
+    own('deleted', { due_at: '2026-10-16T06:00:00.000Z', deleted_at: '2026-10-16T07:00:00.000Z' }),
+    own('theirs', { due_at: '2026-10-16T06:00:00.000Z', assignee_id: OWNER.id }),
+    own('nobodys', { due_at: '2026-10-16T06:00:00.000Z', assignee_id: null }),
+  ]
+
+  it('show how many of my tasks are due today or late on Today, and how many of my tasks are open on Tasks', async () => {
+    await renderShell({ tasks: week, now: NOON })
+    expect(badge('היום')).toHaveTextContent('2')
+    expect(badge('משימות')).toHaveTextContent('4')
+    // The calendar has no number.
+    expect(within(link('יומן')).queryByText(/\d/)).not.toBeInTheDocument()
+  })
+
+  it('say the same in words to a screen reader, and leave the names of the tabs alone', async () => {
+    await renderShell({ tasks: week, now: NOON })
+    expect(link('היום')).toHaveAccessibleDescription('2 משימות להיום, יש באיחור')
+    expect(link('משימות')).toHaveAccessibleDescription('4 משימות פתוחות')
+    expect(badge('היום')).toHaveAttribute('aria-hidden', 'true')
+    expect(badge('משימות')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('turn red on Today when something is late, and only then', async () => {
+    await renderShell({ tasks: week, now: NOON })
+    expect(badge('היום')).toHaveClass('tab-badge-late')
+    expect(badge('משימות')).not.toHaveClass('tab-badge-late')
+  })
+
+  it('are not red when what is due today is still to come', async () => {
+    await renderShell({ tasks: [own('later', { due_at: '2026-10-16T15:00:00.000Z' })], now: NOON })
+    expect(badge('היום')).toHaveTextContent('1')
+    expect(badge('היום')).not.toHaveClass('tab-badge-late')
+    expect(link('היום')).toHaveAccessibleDescription('משימה אחת להיום')
+    expect(link('משימות')).toHaveAccessibleDescription('משימה פתוחה אחת')
+  })
+
+  it('are not there when there is nothing to count, and the tabs have no description then', async () => {
+    await renderShell({ tasks: [own('done', { done_at: '2026-10-16T07:00:00.000Z' }), own('theirs', { assignee_id: OWNER.id })], now: NOON })
+    expect(badge('היום')).not.toBeInTheDocument()
+    expect(badge('משימות')).not.toBeInTheDocument()
+    expect(link('היום')).not.toHaveAttribute('aria-describedby')
+    expect(link('משימות')).not.toHaveAttribute('aria-describedby')
+    expect(link('היום')).toHaveTextContent(/^היום$/)
+  })
+
+  it('count the tasks of the person who is signed in', async () => {
+    await renderShell({ tasks: week, now: NOON, profile: OWNER })
+    expect(badge('היום')).toHaveTextContent('1')
+    expect(link('היום')).toHaveAccessibleDescription('משימה אחת להיום, יש באיחור')
+    expect(badge('משימות')).toHaveTextContent('1')
+  })
+
+  it('show 99+ for a long list, and say the exact number in words', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => own('t' + i, { due_at: '2026-10-16T15:00:00.000Z' }))
+    await renderShell({ tasks: many, now: NOON })
+    expect(badge('היום')).toHaveTextContent('99+')
+    expect(badge('משימות')).toHaveTextContent('99+')
+    expect(link('היום')).toHaveAccessibleDescription('120 משימות להיום')
+    expect(link('משימות')).toHaveAccessibleDescription('120 משימות פתוחות')
+  })
+
+  it('show exactly 99 as 99', async () => {
+    const ninetyNine = Array.from({ length: 99 }, (_, i) => own('t' + i))
+    await renderShell({ tasks: ninetyNine, now: NOON })
+    expect(badge('משימות')).toHaveTextContent(/^99$/)
+  })
+
+  it('follow the tasks as they change', async () => {
+    const { tasks } = await renderShell({ tasks: [own('a', { due_at: '2026-10-16T15:00:00.000Z' })], now: NOON })
+    expect(badge('משימות')).toHaveTextContent('1')
+    act(() => tasks.setState({ tasks: { ...tasks.getState().tasks, b: own('b'), c: own('c', { due_at: '2026-10-16T05:00:00.000Z' }) } }))
+    expect(badge('משימות')).toHaveTextContent('3')
+    expect(badge('היום')).toHaveTextContent('2')
+    expect(badge('היום')).toHaveClass('tab-badge-late')
+    act(() => tasks.setState({ tasks: { a: tasks.getState().tasks.a } }))
+    expect(badge('משימות')).toHaveTextContent('1')
+    expect(badge('היום')).not.toHaveClass('tab-badge-late')
+  })
+})
+
+describe('the numbers on the tabs as time passes', () => {
+  const own = (id: string, patch: Partial<Task> = {}): Task => ({ ...newTask(DANA.id, id), title: id, assignee_id: DANA.id, ...patch })
+  const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+
+  it('turn red when the time of a task passes while the screen is left open', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(NOON))
+    await renderShell({ tasks: [own('soon', { due_at: '2026-10-16T09:30:00.000Z' })] })
+    expect(screen.getByRole('link', { name: 'היום' })).toHaveAccessibleDescription('משימה אחת להיום')
+    await advance(29 * 60_000)
+    expect(screen.getByRole('link', { name: 'היום' })).toHaveAccessibleDescription('משימה אחת להיום')
+    await advance(2 * 60_000)
+    expect(screen.getByRole('link', { name: 'היום' })).toHaveAccessibleDescription('משימה אחת להיום, יש באיחור')
+  })
+
+  it('count a task that was tomorrow once the clock in Jerusalem passes midnight', async () => {
+    // 23:59:30 on Friday in Jerusalem; the task is for 00:30 on Saturday.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-16T20:59:30.000Z'))
+    await renderShell({ tasks: [own('night', { due_at: '2026-10-16T21:30:00.000Z' })] })
+    expect(within(screen.getByRole('link', { name: 'היום' })).queryByText(/\d/)).not.toBeInTheDocument()
+    await advance(60_000)
+    expect(within(screen.getByRole('link', { name: 'היום' })).getByText('1')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'היום' })).toHaveAccessibleDescription('משימה אחת להיום')
   })
 })
 

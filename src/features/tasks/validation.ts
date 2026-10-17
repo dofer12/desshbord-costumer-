@@ -120,6 +120,25 @@ export function fromDueAt(iso: string | null): { dueDate: string; dueTime: strin
   return { dueDate: `${p.year}-${p.month}-${p.day}`, dueTime: `${p.hour}:${p.minute}` }
 }
 
+// A whole moment with a zone: "2026-10-20T11:30:00.000Z", seconds and milliseconds optional, "Z" or an offset.
+const MOMENT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/
+
+/**
+ * The moment that the address of a new card asks for (`?due=`), as an ISO string in UTC, or null when
+ * there is none or it is not a real moment. The browser's own parser is too forgiving for this: it
+ * reads "1" as a year, and moves the 30th of February to March. A value that someone typed by hand and
+ * got wrong is left out, so the card opens empty and not on a date nobody chose.
+ */
+export function parseDuePreset(value: string | null): string | null {
+  const parts = value === null ? null : MOMENT_PATTERN.exec(value)
+  if (!parts || value === null) return null
+  const [year, month, day] = [+parts[1], +parts[2], +parts[3]]
+  const calendar = new Date(Date.UTC(year, month - 1, day))
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return null
+  const ms = Date.parse(value)
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString()
+}
+
 /**
  * The address of a Glassix conversation: the template of the settings with {id} replaced by the
  * conversation id. Null unless the template is a web address that starts with https:// and has {id}.

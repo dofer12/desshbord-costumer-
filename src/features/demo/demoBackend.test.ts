@@ -127,6 +127,8 @@ describe('the demo backend', () => {
     expect(profiles.map((p) => p.id)).toContain(DEMO_PROFILE.id)
     expect(profiles.length).toBeGreaterThanOrEqual(4)
     expect(profiles.every((p) => p.is_active)).toBe(true)
+    // Every person has the default reminder that a new task starts with, as a real profile does.
+    expect(profiles.every((p) => p.default_remind_min === 15)).toBe(true)
     expect(statuses).toHaveLength(17)
     expect(glassixUrl(settings.glassix_url_template, 'demo-4801')).toMatch(/^https:\/\//)
     expect(settings.ship_methods).toContain('CARGO')

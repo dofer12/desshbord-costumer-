@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
+import { useNow } from '../../lib/useNow'
 import { useAuth } from '../auth/authContext'
+import { todayBadge } from '../schedule/today'
+import { MY_OPEN_TASKS, filterTasks } from '../tasks/selectors'
 import { useTasks } from '../tasks/tasksContext'
 
 const ROLE_LABEL = { admin: 'מנהל', employee: 'עובד' } as const
@@ -30,6 +33,67 @@ function useMembershipCheck() {
 }
 
 const countText = (n: number, one: string, many: string) => (n === 1 ? one : `${n} ${many}`)
+
+/** The number on a tab. A long list shows 99+, and the words that go with it say the exact number. */
+const badgeText = (count: number) => (count > 99 ? '99+' : String(count))
+
+interface TabProps {
+  to: string
+  label: string
+  /** The number on the tab. Nothing is shown for nought. */
+  count?: number
+  /** The number is red: something is late. */
+  late?: boolean
+  /** The number in words, for a screen reader. It is a description of the tab, so the name of the tab stays what it says. */
+  words?: string
+}
+
+function Tab({ to, label, count = 0, late = false, words }: TabProps) {
+  const note = useId()
+  const shown = count > 0
+  return (
+    <NavLink to={to} className="app-tab" aria-describedby={shown ? note : undefined}>
+      {label}
+      {shown && (
+        <>
+          <span className={late ? 'tab-badge tab-badge-late' : 'tab-badge'} aria-hidden="true">
+            {badgeText(count)}
+          </span>
+          <span id={note} hidden>
+            {words}
+          </span>
+        </>
+      )}
+    </NavLink>
+  )
+}
+
+/**
+ * Today, the tasks and the calendar. Today shows how many of my tasks are due by the end of the day,
+ * the late ones too, and turns red when one is late; the tasks show how many of my tasks are open.
+ * The clock brings the numbers up to date as the minutes and the midnight pass.
+ */
+function Tabs() {
+  const tasks = useTasks((state) => state.tasks)
+  const me = useAuth((state) => state.profile?.id ?? '')
+  const now = useNow()
+  const list = useMemo(() => Object.values(tasks), [tasks])
+  const today = useMemo(() => todayBadge(list, now, me), [list, now, me])
+  const open = useMemo(() => filterTasks(list, MY_OPEN_TASKS, me).length, [list, me])
+  return (
+    <nav className="app-tabs" aria-label="ניווט ראשי">
+      <Tab
+        to="/today"
+        label="היום"
+        count={today.count}
+        late={today.late}
+        words={countText(today.count, 'משימה אחת להיום', 'משימות להיום') + (today.late ? ', יש באיחור' : '')}
+      />
+      <Tab to="/tasks" label="משימות" count={open} words={countText(open, 'משימה פתוחה אחת', 'משימות פתוחות')} />
+      <Tab to="/calendar" label="יומן" />
+    </nav>
+  )
+}
 
 /** "N שינויים ממתינים", and the changes that the server refused. */
 function SyncStatus() {
@@ -125,11 +189,7 @@ export function AppShell({ serverHost }: { serverHost: string }) {
     <div className="app">
       <header className="app-bar">
         <h1 className="display app-title">יומן משימות מוקד</h1>
-        <nav className="app-tabs" aria-label="ניווט ראשי">
-          <NavLink to="/tasks" className="app-tab">
-            משימות
-          </NavLink>
-        </nav>
+        <Tabs />
         <div className="app-bar-end">
           <SyncStatus />
           <UserMenu serverHost={serverHost} />

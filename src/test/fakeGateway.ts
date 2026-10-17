@@ -8,6 +8,7 @@ export const DANA: Profile = {
   role: 'employee',
   is_active: true,
   must_change_password: false,
+  default_remind_min: 15,
 }
 
 export const OWNER: Profile = {
@@ -17,6 +18,7 @@ export const OWNER: Profile = {
   role: 'admin',
   is_active: true,
   must_change_password: false,
+  default_remind_min: 15,
 }
 
 export interface FakeGateway {

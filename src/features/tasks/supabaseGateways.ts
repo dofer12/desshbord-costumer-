@@ -22,7 +22,7 @@ const RECENT_DONE_DAYS = 30
 const DAY_MS = 86_400_000
 const BUCKET = 'task-files'
 const SIGNED_URL_SECONDS = 3600
-const PROFILE_COLUMNS = 'id,email,display_name,role,is_active,must_change_password'
+const PROFILE_COLUMNS = 'id,email,display_name,role,is_active,must_change_password,default_remind_min'
 
 /** An error that carries the HTTP status (0 when the server was not reached), as the auth gateway's do. */
 type GatewayError = Error & { code?: string; status: number }

@@ -19,7 +19,7 @@ const status = (key: string, name_he: string, color: string): [string, Status] =
 const statuses = new Map([status('processing', 'בטיפול', '#22a559'), status('cargo', 'Send to CARGO', '#1e88c9'), status('dark', 'כהה', '#3a4250')])
 const person = (id: string, display_name: string): [string, Profile] => [
   id,
-  { id, email: `${id}@example.com`, display_name, role: 'employee', is_active: true, must_change_password: false },
+  { id, email: `${id}@example.com`, display_name, role: 'employee', is_active: true, must_change_password: false, default_remind_min: 15 },
 ]
 const people = new Map([person('u-dana', 'דנה')])
 

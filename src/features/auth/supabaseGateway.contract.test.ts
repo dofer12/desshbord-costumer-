@@ -132,10 +132,30 @@ describe('start-up with a stored session', () => {
   })
 
   it('signs in when the profile is there and active', async () => {
-    const profile = { id: USER.id, email: USER.email, display_name: 'דנה', role: 'employee', is_active: true, must_change_password: false }
+    const profile = {
+      id: USER.id,
+      email: USER.email,
+      display_name: 'דנה',
+      role: 'employee',
+      is_active: true,
+      must_change_password: false,
+      default_remind_min: 30,
+    }
     const h = harness(profileAnswers(() => json(200, profile)))
     await h.store.getState().init()
     expect(h.store.getState()).toMatchObject({ status: 'signedIn', profile })
+  })
+
+  it('reads the default reminder of the person with the profile, because a new task starts with it', async () => {
+    const h = harness(
+      profileAnswers(() =>
+        json(200, { id: USER.id, email: USER.email, display_name: 'דנה', role: 'employee', is_active: true, must_change_password: false, default_remind_min: 0 }),
+      ),
+    )
+    await h.store.getState().init()
+    const asked = h.sent.find((request) => request.url.pathname === PROFILES)
+    expect(asked?.url.searchParams.get('select')).toBe('id,email,display_name,role,is_active,must_change_password,default_remind_min')
+    expect(h.store.getState().profile?.default_remind_min).toBe(0)
   })
 })
 

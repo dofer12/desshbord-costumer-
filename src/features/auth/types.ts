@@ -7,6 +7,8 @@ export interface Profile {
   role: Role
   is_active: boolean
   must_change_password: boolean
+  /** Minutes before the due time at which a new task of this person reminds them. 0 is at the due time. */
+  default_remind_min: number
 }
 
 /** Everything the auth store needs from the backend, so tests can fake it. */

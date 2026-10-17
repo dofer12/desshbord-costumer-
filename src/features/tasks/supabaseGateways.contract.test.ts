@@ -369,6 +369,7 @@ describe('directory', () => {
     role: 'employee',
     is_active: true,
     must_change_password: false,
+    default_remind_min: 15,
     ...patch,
   })
   const status = (key: string, sort: number) => ({ key, name_he: key, color: '#000000', sort, is_active: true })
@@ -395,7 +396,7 @@ describe('directory', () => {
     expect(requests['/rest/v1/statuses'].searchParams.get('select')).toBe('key,name_he,color,sort,is_active')
     expect(requests['/rest/v1/profiles'].searchParams.get('order')).toBe('display_name.asc')
     expect(requests['/rest/v1/profiles'].searchParams.get('select')).toBe(
-      'id,email,display_name,role,is_active,must_change_password',
+      'id,email,display_name,role,is_active,must_change_password,default_remind_min',
     )
     expect(requests['/rest/v1/app_settings'].searchParams.get('select')).toBe('key,value')
   })

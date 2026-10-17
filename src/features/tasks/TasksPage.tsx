@@ -7,14 +7,12 @@ import { toHebrewLoadError } from './errors'
 import { Filters } from './Filters'
 import { Pager } from './Pager'
 import { normalizeQuery } from './search'
-import { filterTasks, paginate, sortByChoice, statusCounts, type SortChoice, type TaskFilter } from './selectors'
+import { MY_OPEN_TASKS, filterTasks, paginate, sortByChoice, statusCounts, type SortChoice, type TaskFilter } from './selectors'
 import { StatusChips } from './StatusChips'
 import { TaskCards } from './TaskCards'
 import { TaskTable } from './TaskTable'
 import { useDirectory, useTasks } from './tasksContext'
 
-/** What the screen shows at first: the open tasks of the person who is signed in. */
-const MY_OPEN_TASKS: TaskFilter = { statusKey: null, assignee: 'me', shipMethod: null, state: 'open', text: '' }
 const EVERYTHING: TaskFilter = { statusKey: null, assignee: 'all', shipMethod: null, state: 'all', text: '' }
 
 const tasksWord = (n: number) => (n === 1 ? 'משימה אחת' : `${n} משימות`)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { newTask, type Task } from './model'
-import { TASK_MESSAGES, fallbackTitle, fromDueAt, glassixUrl, toDueAt, validateTask } from './validation'
+import { TASK_MESSAGES, fallbackTitle, fromDueAt, glassixUrl, parseDuePreset, toDueAt, validateTask } from './validation'
 
 /** A task that passes every rule: it has an order number and the "no Glassix conversation" tick. */
 function task(patch: Partial<Task> = {}): Task {
@@ -172,6 +172,48 @@ describe('toDueAt and fromDueAt', () => {
 
   it('shows nothing for a value that is not a date', () => {
     expect(fromDueAt('garbage')).toEqual({ dueDate: '', dueTime: '' })
+  })
+})
+
+describe('parseDuePreset', () => {
+  // The address of a new card can carry the moment that the person clicked on the calendar: `?due=`.
+  // Only a whole, real moment counts. A value that someone typed by hand and got wrong is left out,
+  // and the card opens empty rather than on a date nobody chose.
+  it('keeps a moment in UTC, with or without seconds and milliseconds, as an ISO string', () => {
+    expect(parseDuePreset('2026-10-20T11:30:00.000Z')).toBe('2026-10-20T11:30:00.000Z')
+    expect(parseDuePreset('2026-10-20T11:30:00Z')).toBe('2026-10-20T11:30:00.000Z')
+    expect(parseDuePreset('2026-10-20T11:30Z')).toBe('2026-10-20T11:30:00.000Z')
+    expect(parseDuePreset('2026-10-20T11:30:15.5Z')).toBe('2026-10-20T11:30:15.500Z')
+  })
+
+  it('turns a moment with an offset into the same moment in UTC', () => {
+    expect(parseDuePreset('2026-10-20T14:30:00+03:00')).toBe('2026-10-20T11:30:00.000Z')
+    expect(parseDuePreset('2026-10-20T06:30:00-05:00')).toBe('2026-10-20T11:30:00.000Z')
+  })
+
+  it.each([
+    ['nothing', null],
+    ['an empty value', ''],
+    ['a word', 'banana'],
+    ['a bare number, which the browser would read as a year', '1'],
+    ['a date without a time', '2026-10-20'],
+    ['a time without a zone, which would depend on where the computer is', '2026-10-20T11:30:00'],
+    ['a space in the place of the T', '2026-10-20 11:30:00Z'],
+    ['an offset whose plus sign was read as a space', '2026-10-20T14:30:00 03:00'],
+    ['a month that does not exist', '2026-13-01T10:00:00Z'],
+    ['a day that does not exist, which the browser would move to the next month', '2026-02-30T10:00:00Z'],
+    ['the 29th of February of a year that is not a leap year', '2026-02-29T10:00:00Z'],
+    ['an hour of 24, which the browser would move to the next day', '2026-10-20T24:00:00Z'],
+    ['an hour of 25', '2026-10-20T25:00:00Z'],
+    ['sixty minutes', '2026-10-20T11:60:00Z'],
+    ['a year before 100, which the browser would move to the 1900s', '0026-10-20T11:30:00Z'],
+    ['text around a good moment', ' 2026-10-20T11:30:00Z'],
+  ])('leaves out %s', (_name, value) => {
+    expect(parseDuePreset(value)).toBeNull()
+  })
+
+  it('accepts the 29th of February of a leap year', () => {
+    expect(parseDuePreset('2028-02-29T10:00:00Z')).toBe('2028-02-29T10:00:00.000Z')
   })
 })
 

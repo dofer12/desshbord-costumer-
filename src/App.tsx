@@ -1,10 +1,21 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { LoginPage } from './features/auth/LoginPage'
 import { AuthShell, RequireAuth } from './features/auth/routes'
+import { CalendarPage } from './features/schedule/CalendarPage'
+import { TodayPage } from './features/schedule/TodayPage'
 import { AppShell } from './features/shell/AppShell'
 import { TaskCardRoute } from './features/tasks/TaskCardRoute'
 import { TasksPage } from './features/tasks/TasksPage'
 import { TasksProvider } from './features/tasks/TasksProvider'
+
+// The card of a task opens over the page it was opened from, so that the page keeps its filters, its
+// day and its place. Closing the card goes back to that page.
+const cardRoutes = (
+  <>
+    <Route path="new" element={<TaskCardRoute />} />
+    <Route path=":id" element={<TaskCardRoute />} />
+  </>
+)
 
 export function App({ serverHost }: { serverHost: string }) {
   return (
@@ -19,11 +30,15 @@ export function App({ serverHost }: { serverHost: string }) {
               </TasksProvider>
             }
           >
-            <Route index element={<Navigate to="/tasks" replace />} />
-            {/* The card of a task opens beside the list, so that the list keeps its filters and its place. */}
+            <Route index element={<Navigate to="/today" replace />} />
+            <Route path="today" element={<TodayPage />}>
+              {cardRoutes}
+            </Route>
             <Route path="tasks" element={<TasksPage />}>
-              <Route path="new" element={<TaskCardRoute />} />
-              <Route path=":id" element={<TaskCardRoute />} />
+              {cardRoutes}
+            </Route>
+            <Route path="calendar" element={<CalendarPage />}>
+              {cardRoutes}
             </Route>
           </Route>
         </Route>

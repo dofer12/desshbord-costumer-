@@ -10,7 +10,7 @@ describe('demo gateway', () => {
   })
 
   it('uses an active admin that is never asked to change a password, with an address that cannot exist', () => {
-    expect(DEMO_PROFILE).toMatchObject({ role: 'admin', is_active: true, must_change_password: false })
+    expect(DEMO_PROFILE).toMatchObject({ role: 'admin', is_active: true, must_change_password: false, default_remind_min: 15 })
     expect(DEMO_PROFILE.email).toMatch(/\.invalid$/)
   })
 

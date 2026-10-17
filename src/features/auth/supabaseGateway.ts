@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { isNetworkError } from './errors'
 import type { AuthGateway, Profile } from './types'
 
-const PROFILE_COLUMNS = 'id, email, display_name, role, is_active, must_change_password'
+const PROFILE_COLUMNS = 'id, email, display_name, role, is_active, must_change_password, default_remind_min'
 
 /** Adapts supabase-js to the small interface the auth store depends on. */
 export function createSupabaseGateway(client: SupabaseClient): AuthGateway {

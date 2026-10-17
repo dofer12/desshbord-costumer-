@@ -26,17 +26,28 @@ describe('App routing', () => {
     expect(screen.queryByRole('navigation', { name: 'ניווט ראשי' })).not.toBeInTheDocument()
   })
 
-  it('sends a signed-in user from the home route to the tasks screen', async () => {
+  it('sends a signed-in user from the home route to the Today screen', async () => {
     renderApp({ path: '/', configure: signedInAsDana })
     await findSignedInApp()
-    expect(await screen.findByRole('link', { name: 'משימות', current: 'page' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'משימות' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'היום', current: 'page' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'היום' })).toBeInTheDocument()
   })
 
-  it('redirects unknown routes to the tasks screen', async () => {
+  it('redirects unknown routes to the Today screen', async () => {
     renderApp({ path: '/nope', configure: signedInAsDana })
     await findSignedInApp()
-    expect(await screen.findByRole('link', { name: 'משימות', current: 'page' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'היום', current: 'page' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['/today', 'היום'],
+    ['/tasks', 'משימות'],
+    ['/calendar', 'יומן'],
+  ])('shows the screen at %s with its tab marked', async (path, name) => {
+    renderApp({ path, configure: signedInAsDana })
+    await findSignedInApp()
+    expect(await screen.findByRole('link', { name, current: 'page' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument()
   })
 
   it('keeps the stored session when the server cannot be reached, and recovers on retry', async () => {
