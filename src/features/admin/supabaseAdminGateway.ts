@@ -2,7 +2,8 @@ import { FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@s
 import { apiError, type ApiError } from '../../lib/apiError'
 import type { Profile } from '../auth/types'
 import type { Status } from '../tasks/gateways'
-import type { AdminErrorCode, AdminGateway, AdminStatusesGateway, UserFailureCode, UserOutcome } from './gateways'
+import type { AdminErrorCode, AdminGateway, AdminSettingsGateway, AdminStatusesGateway, UserFailureCode, UserOutcome } from './gateways'
+import { settingRows } from './settingsRules'
 import { cleanStatusPatch, newStatusRow } from './statusRules'
 
 // The administrator tools of the real app: the people of the team are made, reset, blocked and changed
@@ -93,6 +94,18 @@ function createStatusesGateway(client: SupabaseClient): AdminStatusesGateway {
   }
 }
 
+function createSettingsGateway(client: SupabaseClient): AdminSettingsGateway {
+  return {
+    async save(patch) {
+      const rows = settingRows(patch)
+      if (rows.length === 0) return
+      // An upsert on the key (Prefer: resolution=merge-duplicates): the rows are there since 0002, and a key that is not is made.
+      const { error, status } = await client.from('app_settings').upsert(rows, { onConflict: 'key' })
+      if (error) throw apiError(error, status)
+    },
+  }
+}
+
 export function createSupabaseAdminGateway(client: SupabaseClient): AdminGateway {
   async function call(body: Record<string, unknown>): Promise<UserOutcome> {
     try {
@@ -117,5 +130,6 @@ export function createSupabaseAdminGateway(client: SupabaseClient): AdminGateway
       rename: (userId, displayName) => call({ action: 'rename', user_id: userId, display_name: displayName }),
     },
     statuses: createStatusesGateway(client),
+    settings: createSettingsGateway(client),
   }
 }

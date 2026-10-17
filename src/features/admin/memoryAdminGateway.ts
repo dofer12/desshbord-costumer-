@@ -3,6 +3,7 @@ import type { Profile } from '../auth/types'
 import { handleAdminRequest, type AdminDeps, type AdminResult } from '../../../supabase/functions/admin-users/logic'
 import type { MemoryDirectory } from '../tasks/memoryGateways'
 import type { AdminGateway, UserOutcome } from './gateways'
+import { settingRows } from './settingsRules'
 import { cleanStatusPatch, newStatusRow } from './statusRules'
 
 // The administrator tools with no server behind them, for the demo and for the tests of the screens. It
@@ -41,13 +42,13 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
   const copy = (profile: Profile | undefined): Profile | null => (profile ? { ...profile } : null)
   const actingUserId = () => (typeof options.currentUserId === 'function' ? options.currentUserId() : options.currentUserId)
 
-  /** The policies of the database: nobody signed in is not heard at all, and the statuses are written by an active administrator only. */
-  function requireAdministrator(): void {
+  /** The policies of the database: nobody signed in is not heard at all, and the statuses and the settings are written by an active administrator only. */
+  function requireAdministrator(table: 'statuses' | 'app_settings'): void {
     const id = actingUserId()
     if (id === null) throw apiError({ message: 'JWT expired', code: 'PGRST301' }, 401)
     const me = find((profile) => profile.id === id)
     if (!me || me.role !== 'admin' || !me.is_active) {
-      throw apiError({ message: 'new row violates row-level security policy for table "statuses"', code: '42501' }, 403)
+      throw apiError({ message: `new row violates row-level security policy for table "${table}"`, code: '42501' }, 403)
     }
   }
 
@@ -104,7 +105,7 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
     },
     statuses: {
       async add(input) {
-        requireAdministrator()
+        requireAdministrator('statuses')
         const row = newStatusRow(input, directory.statuses)
         directory.statuses.push(row)
         directory.changed()
@@ -113,7 +114,7 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
 
       async update(key, patch) {
         const clean = cleanStatusPatch(patch)
-        requireAdministrator()
+        requireAdministrator('statuses')
         const found = directory.statuses.find((status) => status.key === key)
         // What the database API says when one row was asked for and there is none.
         if (!found) throw apiError({ message: 'JSON object requested, multiple (or no) rows returned', code: 'PGRST116' }, 406)
@@ -123,7 +124,7 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
       },
 
       async reorder(keys) {
-        requireAdministrator()
+        requireAdministrator('statuses')
         let changed = false
         for (const [index, key] of keys.entries()) {
           const found = directory.statuses.find((status) => status.key === key)
@@ -133,6 +134,16 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
           }
         }
         if (changed) directory.changed()
+      },
+    },
+    settings: {
+      async save(patch) {
+        const rows = settingRows(patch)
+        if (rows.length === 0) return
+        requireAdministrator('app_settings')
+        // What is kept is a copy: the caller's list is theirs.
+        for (const row of rows) Object.assign(directory.settings, { [row.key]: Array.isArray(row.value) ? [...row.value] : row.value })
+        directory.changed()
       },
     },
   }

@@ -1,3 +1,4 @@
+import { hasControlCharacter } from '../auth/profileForm'
 import type { Task } from './model'
 
 export const TASK_MESSAGES = {
@@ -153,4 +154,56 @@ export function glassixUrl(template: string, id: string): string | null {
   } catch {
     return null
   }
+}
+
+/** What an administrator is told about the template of the address of a Glassix conversation. */
+export const GLASSIX_TEMPLATE_MESSAGES = {
+  spaces: 'בכתובת אסור שיהיו רווחים.',
+  https: 'הכתובת צריכה להתחיל ב-https://',
+  id: 'הכתובת צריכה לכלול את {id}, שבמקומו יוכנס מזהה השיחה.',
+  invalid: 'זאת לא כתובת אינטרנט תקינה.',
+  long: 'הכתובת ארוכה מדי: עד 500 תווים.',
+} as const
+
+const MAX_TEMPLATE_LENGTH = 500
+
+/**
+ * The sentence for a template of the address of a Glassix conversation that cannot be used, or null. Empty is
+ * allowed and means that there is no button. Otherwise it is what glassixUrl turns into an address: a web
+ * address that starts with https://, with {id} in it (once or more) and no space, that is still an address
+ * when {id} is a conversation id.
+ */
+export function validateGlassixTemplate(template: string): string | null {
+  const base = template.trim()
+  if (base === '') return null
+  if (base.length > MAX_TEMPLATE_LENGTH) return GLASSIX_TEMPLATE_MESSAGES.long
+  if (/\s/.test(base)) return GLASSIX_TEMPLATE_MESSAGES.spaces
+  if (!/^https:\/\//i.test(base)) return GLASSIX_TEMPLATE_MESSAGES.https
+  if (!base.includes('{id}')) return GLASSIX_TEMPLATE_MESSAGES.id
+  return glassixUrl(base, '123') === null ? GLASSIX_TEMPLATE_MESSAGES.invalid : null
+}
+
+/** The most shipping methods there can be, and the longest name of one. */
+export const MAX_SHIP_METHODS = 20
+export const MAX_SHIP_METHOD_LENGTH = 40
+
+/**
+ * The sentence for a list of shipping methods that cannot be used, or null: from one to twenty, each with a
+ * name of one to forty characters (as a person counts them) with no character that cannot be shown, and
+ * no name twice, whatever the case and the spaces around it.
+ */
+export function validateShipMethods(list: string[]): string | null {
+  if (list.length === 0) return 'צריכה להיות לפחות שיטת משלוח אחת.'
+  if (list.length > MAX_SHIP_METHODS) return `אפשר עד ${MAX_SHIP_METHODS} שיטות משלוח.`
+  const seen = new Set<string>()
+  for (const method of list) {
+    const name = method.trim()
+    if (name === '') return 'שם של שיטת משלוח לא יכול להיות ריק.'
+    if (hasControlCharacter(name)) return 'שם של שיטת משלוח מכיל תו שאי אפשר להציג.'
+    if ([...name].length > MAX_SHIP_METHOD_LENGTH) return `שם של שיטת משלוח ארוך מדי: עד ${MAX_SHIP_METHOD_LENGTH} תווים.`
+    const key = name.toLowerCase()
+    if (seen.has(key)) return `יש שיטת משלוח שמופיעה פעמיים: ${name}`
+    seen.add(key)
+  }
+  return null
 }

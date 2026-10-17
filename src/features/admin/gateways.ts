@@ -1,5 +1,5 @@
 import type { Profile, Role } from '../auth/types'
-import type { Status } from '../tasks/gateways'
+import type { Settings, Status } from '../tasks/gateways'
 import type { AdminErrorCode } from '../../../supabase/functions/admin-users/logic'
 
 // What the screens of the administrator need from outside the app, as plain interfaces: the real thing
@@ -51,9 +51,20 @@ export interface AdminStatusesGateway {
   reorder(keys: string[]): Promise<void>
 }
 
+/**
+ * The settings of the team (the rows of `app_settings`), written by the app itself with the token of the
+ * session, as the statuses are: the policies of the database let only an administrator do it. A write that
+ * fails throws an error that carries `code` and `status` (see writeErrors.ts).
+ */
+export interface AdminSettingsGateway {
+  /** Writes the settings that are given, one row each, in one request. Nothing is sent for an empty patch. */
+  save(patch: Partial<Settings>): Promise<void>
+}
+
 export interface AdminGateway {
   users: AdminUsersGateway
   statuses: AdminStatusesGateway
+  settings: AdminSettingsGateway
 }
 
 /** What an administrator is told when a call about a person fails: in the plural of the imperative, with no word of the server. */

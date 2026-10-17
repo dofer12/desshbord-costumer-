@@ -2085,6 +2085,89 @@ a.btn {
   max-width: 70ch;
 }
 
+/* The settings: one form, with the address of a Glassix conversation and the list of the shipping methods. */
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 640px;
+}
+
+.settings-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-form legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.settings-form .field a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.method-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.method-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.method-row input {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 16px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.method-row input[readonly] {
+  opacity: 0.7;
+}
+
+.method-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.method-actions .btn {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.method-tools,
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.saved-note {
+  color: var(--ok);
+  font-weight: 600;
+}
+
 /* A question with a few answers, over the page: narrow, and not a whole screen on a phone. */
 .modal-compact {
   width: min(100%, 460px);
