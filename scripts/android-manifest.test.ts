@@ -1,8 +1,10 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import config from '../capacitor.config'
 
 const manifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8')
+const permissions = () => [...manifest.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((match) => match[1]).sort()
 
 describe('the Android manifest', () => {
   it('lets the app find the camera, so that the "צלם" button opens it', () => {
@@ -21,8 +23,32 @@ describe('the Android manifest', () => {
     expect(manifest).toContain('${applicationId}.fileprovider')
   })
 
-  it('asks for the internet, and for nothing else', () => {
-    const permissions = [...manifest.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((match) => match[1])
-    expect(permissions).toEqual(['android.permission.INTERNET'])
+  it('asks for the internet, and for what reminders need, and for nothing else', () => {
+    // Android 13 asks the person before it shows a notification, Android 12 before an alarm goes off at
+    // the minute, and a phone that is switched on again must get its pending reminders back. (The plugin
+    // of the notifications adds the same permissions to the app when it is built; they are written here
+    // too, so that what the app asks for can be read in one place.)
+    expect(permissions()).toEqual([
+      'android.permission.INTERNET',
+      'android.permission.POST_NOTIFICATIONS',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
+      'android.permission.SCHEDULE_EXACT_ALARM',
+    ])
+  })
+
+  it('still has no permission for the camera, the contacts, the location or the storage', () => {
+    for (const forbidden of ['CAMERA', 'READ_CONTACTS', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE']) {
+      expect(manifest).not.toContain(`android.permission.${forbidden}`)
+    }
+  })
+
+  it('has the small icon of the notifications, and tells the plugin to use it', () => {
+    const icon = config.plugins?.LocalNotifications?.smallIcon
+    expect(icon).toBe('ic_stat_moked')
+    expect(existsSync(new URL(`../android/app/src/main/res/drawable/${icon}.xml`, import.meta.url))).toBe(true)
+  })
+
+  it('colours the small icon with the colour of the app', () => {
+    expect(config.plugins?.LocalNotifications?.iconColor).toBe('#0e6b75')
   })
 })

@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core'
+import { LocalNotifications, type LocalNotificationsPlugin } from '@capacitor/local-notifications'
+import { createNativeNotifier } from './nativeNotifier'
 import type { PlannedNotification } from './reminders'
 
 // The part of the platform that shows a notification at a planned time. The rest of the app plans
@@ -176,7 +179,12 @@ export function createMemoryNotifier(
   return notifier
 }
 
-/** The notifier of the platform the app runs on. */
-export function chooseNotifier(): Notifier {
-  return createWebNotifier()
+/**
+ * The notifier of the platform the app runs on: Capacitor's local notifications in the Android app,
+ * and the Notification API with timers anywhere else (a browser, and the window of the Windows app).
+ * The arguments are for tests.
+ */
+export function chooseNotifier(deps: { native?: boolean; plugin?: LocalNotificationsPlugin } = {}): Notifier {
+  const native = deps.native ?? Capacitor.isNativePlatform()
+  return native ? createNativeNotifier(deps.plugin ?? LocalNotifications) : createWebNotifier()
 }

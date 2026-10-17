@@ -29,6 +29,7 @@
     "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/core": "^8.5.3",
+    "@capacitor/local-notifications": "^8.3.1",
     "@electric-sql/pglite": "^0.5.9",
     "@eslint/js": "^10.0.1",
     "@fontsource/ibm-plex-sans-hebrew": "^5.3.0",

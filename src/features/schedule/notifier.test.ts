@@ -1,5 +1,7 @@
+import { Capacitor } from '@capacitor/core'
+import type { LocalNotificationsPlugin } from '@capacitor/local-notifications'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryNotifier, createWebNotifier, type NotificationCtor } from './notifier'
+import { chooseNotifier, createMemoryNotifier, createWebNotifier, type NotificationCtor } from './notifier'
 import type { PlannedNotification } from './reminders'
 
 // The web notifier schedules with timers while the page is open and shows the notification itself.
@@ -243,5 +245,29 @@ describe('createMemoryNotifier', () => {
     expect(await notifier.exactAlarms?.()).toBe('denied')
     await notifier.openExactAlarmSettings?.()
     expect(notifier.exactAlarmSettingsOpened).toBe(1)
+  })
+})
+
+describe('chooseNotifier', () => {
+  const phone = { checkPermissions: async () => ({ display: 'granted' }) } as unknown as LocalNotificationsPlugin
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('is the notifier of the browser where the app runs in a browser', async () => {
+    // jsdom has no Notification, so the notifier of the browser says that there is none.
+    expect(await chooseNotifier({ native: false, plugin: phone }).permission()).toBe('unsupported')
+  })
+
+  it('is the notifier of the phone where the app runs as the Android app', async () => {
+    expect(await chooseNotifier({ native: true, plugin: phone }).permission()).toBe('granted')
+  })
+
+  it('asks Capacitor where it runs when it is not told, and is a notifier of the browser in a test', () => {
+    // Only the notifier of the phone has exact alarms to speak of.
+    expect(chooseNotifier().exactAlarms).toBeUndefined()
+    vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true)
+    expect(chooseNotifier({ plugin: phone }).exactAlarms).toBeTypeOf('function')
   })
 })
