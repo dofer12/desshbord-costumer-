@@ -289,6 +289,36 @@ describe('what a request must look like', () => {
   })
 })
 
+describe('ids that are not UUIDs (the pretend server of the demo and of the tests)', () => {
+  const plain = { isUserId: (value: string) => /^[\w-]{1,64}$/.test(value) }
+
+  it('takes the ids that the predicate takes, as they are, and refuses the others', () => {
+    expect(parseAdminRequest({ action: 'reset_password', user_id: 'u-Dana' }, plain)).toEqual({ action: 'reset_password', user_id: 'u-Dana' })
+    expect(parseAdminRequest({ action: 'reset_password', user_id: 'u dana' }, plain)).toEqual({ invalid: 'user_id' })
+    expect(parseAdminRequest({ action: 'reset_password', user_id: '' }, plain)).toEqual({ invalid: 'user_id' })
+    expect(parseAdminRequest({ action: 'reset_password', user_id: 7 }, plain)).toEqual({ invalid: 'user_id' })
+  })
+
+  it('is not the way of the real function: with no predicate only a UUID is an id', () => {
+    expect(parseAdminRequest({ action: 'reset_password', user_id: 'u-dana' })).toEqual({ invalid: 'user_id' })
+    expect(parseAdminRequest({ action: 'reset_password', user_id: 'u-dana' }, {})).toEqual({ invalid: 'user_id' })
+  })
+
+  it('serves a request with such an id all the way', async () => {
+    const w = world()
+    w.profiles.set('u-dana', profile('u-dana', { display_name: 'Dana Employee', email: 'dana@example.com' }))
+    const result = await handleAdminRequest(w.deps, TOKEN, { action: 'rename', user_id: 'u-dana', display_name: 'Dana Cohen' }, plain)
+    expect(result).toMatchObject({ ok: true, user: { id: 'u-dana', display_name: 'Dana Cohen' } })
+  })
+
+  it('writes such an id in the log as it is, and a UUID in lower case', async () => {
+    const w = world()
+    w.profiles.set('u-dana', profile('u-dana', { display_name: 'Dana Employee', email: 'dana@example.com' }))
+    await handleAdminRequest(w.deps, TOKEN, { action: 'rename', user_id: 'u-dana', display_name: 'Dana Cohen' }, plain)
+    expect(w.logs).toEqual([{ caller: ADMIN_ID, action: 'rename', target: 'u-dana', code: 'ok' }])
+  })
+})
+
 describe('create', () => {
   const body = { action: 'create', email: 'New@Example.com', display_name: 'New Person', role: 'employee' as Role }
 

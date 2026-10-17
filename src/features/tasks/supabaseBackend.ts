@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createSupabaseAdminGateway } from '../admin/supabaseAdminGateway'
 import type { Backend } from './backend'
 import { createIdbOutboxStorage } from './outbox'
 import {
@@ -13,6 +14,7 @@ export function createSupabaseBackend(client: SupabaseClient): Backend {
     tasks: createSupabaseTasksGateway(client),
     directory: createSupabaseDirectoryGateway(client),
     attachments: createSupabaseAttachmentsGateway(client),
+    admin: createSupabaseAdminGateway(client),
     // One key for each person: what one person left waiting is never sent in the name of the next.
     outbox: (userId) => createIdbOutboxStorage(`moked-outbox-${userId}`),
   }

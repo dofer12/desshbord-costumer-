@@ -111,14 +111,24 @@ function cleanEmail(value: unknown): string | null {
   return email.length <= MAX_EMAIL && EMAIL.test(email) && !CONTROL.test(email) ? email : null
 }
 
-function cleanUserId(value: unknown): string | null {
+/** What the rules are told that is not in the request itself. */
+export interface AdminOptions {
+  /**
+   * What a user id may look like. The function takes UUIDs only, as the database does, and that is
+   * the default; the pretend server of the demo and of the tests has ids of other shapes.
+   */
+  isUserId?(value: string): boolean
+}
+
+function cleanUserId(value: unknown, options: AdminOptions): string | null {
   if (typeof value !== 'string') return null
+  if (options.isUserId) return options.isUserId(value) ? value : null
   const id = value.toLowerCase()
   return UUID.test(id) ? id : null
 }
 
 /** The request that a body asks for, or the field that is wrong. Fields that are not known are left out. */
-export function parseAdminRequest(body: unknown): AdminRequest | { invalid: string } {
+export function parseAdminRequest(body: unknown, options: AdminOptions = {}): AdminRequest | { invalid: string } {
   if (!isObject(body)) return { invalid: 'body' }
   const action = body.action
   if (typeof action !== 'string' || !(ACTIONS as readonly string[]).includes(action)) return { invalid: 'action' }
@@ -132,7 +142,7 @@ export function parseAdminRequest(body: unknown): AdminRequest | { invalid: stri
     return { action, email, display_name, role: body.role }
   }
 
-  const user_id = cleanUserId(body.user_id)
+  const user_id = cleanUserId(body.user_id, options)
   if (user_id === null) return { invalid: 'user_id' }
   switch (action) {
     case 'reset_password':
@@ -161,10 +171,10 @@ const fromUpdateError = (error: UpdateError): AdminResult => {
 }
 
 /** What is safe to write in a log of a request that came from an administrator: a known action, and an id. Nothing else of what was typed. */
-function whatWasAsked(body: unknown): { action?: string; target?: string } {
+function whatWasAsked(body: unknown, options: AdminOptions): { action?: string; target?: string } {
   if (!isObject(body)) return {}
   const action = typeof body.action === 'string' && (ACTIONS as readonly string[]).includes(body.action) ? body.action : undefined
-  const target = cleanUserId(body.user_id) ?? undefined
+  const target = cleanUserId(body.user_id, options) ?? undefined
   return { ...(action ? { action } : {}), ...(target ? { target } : {}) }
 }
 
@@ -256,7 +266,7 @@ async function rename(deps: AdminDeps, request: Extract<AdminRequest, { action: 
  * who the caller is or what they may do. Every outcome is a value; what throws unexpectedly is caught
  * here and becomes `failed`, with no word of what went wrong.
  */
-export async function handleAdminRequest(deps: AdminDeps, token: string | null, body: unknown): Promise<AdminResult> {
+export async function handleAdminRequest(deps: AdminDeps, token: string | null, body: unknown, options: AdminOptions = {}): Promise<AdminResult> {
   let caller: string | null = null
   // Only a request of an administrator says what it asked for in the log.
   let administrator = false
@@ -264,7 +274,7 @@ export async function handleAdminRequest(deps: AdminDeps, token: string | null, 
     try {
       deps.log({
         ...(caller === null ? {} : { caller }),
-        ...(administrator ? whatWasAsked(body) : {}),
+        ...(administrator ? whatWasAsked(body, options) : {}),
         code: result.ok ? 'ok' : result.code,
       })
     } catch {
@@ -281,7 +291,7 @@ export async function handleAdminRequest(deps: AdminDeps, token: string | null, 
     if (!me || me.role !== 'admin' || !me.is_active) return finish(refuse('forbidden'))
     administrator = true
 
-    const request = parseAdminRequest(body)
+    const request = parseAdminRequest(body, options)
     if ('invalid' in request) return finish(refuse('invalid', request.invalid))
     switch (request.action) {
       case 'create':

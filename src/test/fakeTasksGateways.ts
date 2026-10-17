@@ -8,7 +8,7 @@ import type {
   TaskEvent,
   TasksGateway,
 } from '../features/tasks/gateways'
-import { createMemoryAttachments, createMemoryDirectory, createMemoryTasks } from '../features/tasks/memoryGateways'
+import { createMemoryAttachments, createMemoryDirectory, createMemoryTasks, type MemoryDirectory } from '../features/tasks/memoryGateways'
 import type { Task, TaskPatch } from '../features/tasks/model'
 import { DANA, OWNER } from './fakeGateway'
 
@@ -137,6 +137,8 @@ export const FAKE_STATUSES: Status[] = [
 
 export interface FakeDirectory {
   gateway: DirectoryGateway
+  /** The pretend server behind the gateway: the tools of the administrator work on the same profiles. */
+  readonly memory: MemoryDirectory
   statuses: Status[]
   profiles: Profile[]
   settings: Settings
@@ -158,6 +160,7 @@ export function createFakeDirectory(): FakeDirectory {
   })
   const failures = createFailures()
   return {
+    memory,
     gateway: {
       async load() {
         failures.check()

@@ -1,3 +1,4 @@
+import { createMemoryAdminGateway } from '../admin/memoryAdminGateway'
 import type { Profile } from '../auth/types'
 import type { Backend } from '../tasks/backend'
 import type { Status, TaskEvent } from '../tasks/gateways'
@@ -523,14 +524,17 @@ export function createDemoBackend(now: () => Date = () => new Date()): Backend {
   })
   // The sample pickup comes with the picture of its product. Adding it takes no waiting.
   void pictures.gateway.add('demo-pickup', { full: demoProductPicture(), thumb: demoProductPicture(), kind: 'product', width: 640, height: 480 })
+  const directory = createMemoryDirectory({
+    statuses: demoStatuses(),
+    profiles: [DEMO_PROFILE, ...demoColleagues()],
+    settings: { glassix_url_template: 'https://example.com/glassix/{id}' },
+  })
   return {
     tasks: memory.gateway,
-    directory: createMemoryDirectory({
-      statuses: demoStatuses(),
-      profiles: [DEMO_PROFILE, ...demoColleagues()],
-      settings: { glassix_url_template: 'https://example.com/glassix/{id}' },
-    }).gateway,
+    directory: directory.gateway,
     attachments: pictures.gateway,
+    // The user of the demo is an administrator, and the people of the demo are the ones that they manage.
+    admin: createMemoryAdminGateway({ directory, currentUserId: ME }),
     outbox: () => createMemoryOutboxStorage(),
   }
 }
