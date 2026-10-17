@@ -26,14 +26,24 @@ describe('the Android manifest', () => {
   it('asks for the internet, and for what reminders need, and for nothing else', () => {
     // Android 13 asks the person before it shows a notification, Android 12 before an alarm goes off at
     // the minute, and a phone that is switched on again must get its pending reminders back. (The plugin
-    // of the notifications adds the same permissions to the app when it is built; they are written here
-    // too, so that what the app asks for can be read in one place.)
+    // of the notifications adds the same permissions, but USE_EXACT_ALARM, to the app when it is built;
+    // they are written here too, so that what the app asks for can be read in one place.)
     expect(permissions()).toEqual([
       'android.permission.INTERNET',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.RECEIVE_BOOT_COMPLETED',
       'android.permission.SCHEDULE_EXACT_ALARM',
+      'android.permission.USE_EXACT_ALARM',
     ])
+  })
+
+  // From Android 13 a permission of this kind is granted when the app is installed and cannot be taken
+  // away, so a reminder is on time without a visit to the settings. Without it, Android 14 gives a new
+  // install no exact alarms, and the person has to find the page "Alarms & reminders". It is meant for
+  // alarm and calendar apps, which a reminder app for a service desk is; it is not a thing to ask for
+  // from a store that checks that (the app is not on one: spec section 6).
+  it('asks for exact alarms in the way that needs no visit to the settings from Android 13 on', () => {
+    expect(manifest).toContain('<uses-permission android:name="android.permission.USE_EXACT_ALARM" />')
   })
 
   it('still has no permission for the camera, the contacts, the location or the storage', () => {

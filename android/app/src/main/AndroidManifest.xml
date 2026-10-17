@@ -48,8 +48,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Reminders: Android 13 asks the person before a notification is shown, Android 12 before an alarm
          goes off at the minute (without it a reminder comes a few minutes late), and a phone that is
-         switched on again gets its pending reminders back. -->
+         switched on again gets its pending reminders back. From Android 13, USE_EXACT_ALARM is granted
+         when the app is installed, so that no visit to the settings is needed (Android 14 gives a new
+         install no exact alarms otherwise). It is meant for alarm and calendar apps: this app is not on a
+         store that checks that. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

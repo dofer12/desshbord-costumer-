@@ -16,6 +16,8 @@ interface Pretend {
   removed: number
   state: { display: string; exact: string | Error }
   scheduled: unknown[]
+  /** What the real plugin would have put on the screen in the middle of a call. */
+  prompts: { settings: number; permission: number }
 }
 
 function pretend(over: { scheduleFails?: Error; channelFails?: Error } = {}): Pretend {
@@ -23,7 +25,10 @@ function pretend(over: { scheduleFails?: Error; channelFails?: Error } = {}): Pr
   const listeners = new Set<Listener>()
   const calls: string[] = []
   const scheduled: unknown[] = []
-  const state: Pretend['state'] = { display: 'prompt', exact: 'granted' }
+  const prompts: Pretend['prompts'] = { settings: 0, permission: 0 }
+  const state: Pretend['state'] = { display: 'granted', exact: 'granted' }
+  // A phone before Android 12 has no setting of exact alarms, and has none to ask for.
+  const exactAllowed = () => state.exact instanceof Error || state.exact === 'granted'
   let removed = 0
   let channelFails = over.channelFails
   const fake = {
@@ -59,8 +64,14 @@ function pretend(over: { scheduleFails?: Error; channelFails?: Error } = {}): Pr
         if (at >= 0) pending.splice(at, 1)
       }
     }),
-    schedule: vi.fn(async ({ notifications }: { notifications: Array<{ id: number }> }) => {
+    schedule: vi.fn(async ({ notifications }: { notifications: Array<{ id: number; isExactNotification?: boolean }> }) => {
       calls.push('schedule')
+      // What the plugin of Capacitor really does (8.3.1, LocalNotificationsPlugin.kt): on Android 13 a
+      // call made before the permission was given asks for it in the middle of the call, and a call that
+      // holds a notification that wants an exact alarm (the default) opens the page of the settings when
+      // exact alarms are not allowed. Each of them waits for the person, over the app.
+      if (state.display !== 'granted') prompts.permission += 1
+      if (notifications.some((n) => n.isExactNotification !== false) && !exactAllowed()) prompts.settings += 1
       if (over.scheduleFails) throw over.scheduleFails
       scheduled.push(...notifications)
       for (const { id } of notifications) pending.push({ id })
@@ -86,6 +97,7 @@ function pretend(over: { scheduleFails?: Error; channelFails?: Error } = {}): Pr
     },
     state,
     scheduled,
+    prompts,
   }
 }
 
@@ -113,6 +125,7 @@ describe('createNativeNotifier: the permission', () => {
 
   it('asks the person and says what they answered', async () => {
     const phone = pretend()
+    phone.state.display = 'prompt'
     const notifier = createNativeNotifier(phone.plugin)
     expect(await notifier.request()).toBe('granted')
     expect(await notifier.permission()).toBe('granted')
@@ -163,11 +176,116 @@ describe('createNativeNotifier: replaceAll', () => {
         title: 'תזכורת: משימה 7',
         body: 'היום · 15:00',
         schedule: { at: plan(7).at, allowWhileIdle: true },
+        isExactNotification: true,
         channelId: 'reminders',
         smallIcon: 'ic_stat_moked',
         extra: { taskId: 'task-7' },
       },
     ])
+  })
+
+  describe('what the plugin would otherwise put on the screen by itself', () => {
+    it('schedules as inexact, and opens no settings page, while exact alarms are not allowed (the state of a new install on Android 14)', async () => {
+      const phone = pretend()
+      phone.state.exact = 'denied'
+      await createNativeNotifier(phone.plugin).replaceAll([plan(1), plan(2)])
+      expect(phone.prompts.settings).toBe(0)
+      expect(phone.scheduled).toHaveLength(2)
+      expect(phone.scheduled).toEqual([expect.objectContaining({ id: 1, isExactNotification: false }), expect.objectContaining({ id: 2, isExactNotification: false })])
+    })
+
+    it('schedules as exact when exact alarms are allowed, and looks at that again for every plan', async () => {
+      const phone = pretend()
+      phone.state.exact = 'denied'
+      const notifier = createNativeNotifier(phone.plugin)
+      await notifier.replaceAll([plan(1)])
+      phone.state.exact = 'granted' // the person allowed them in the settings
+      await notifier.replaceAll([plan(1)])
+      expect(phone.scheduled).toEqual([expect.objectContaining({ isExactNotification: false }), expect.objectContaining({ isExactNotification: true })])
+      expect(phone.prompts.settings).toBe(0)
+    })
+
+    it('takes a phone that cannot tell about exact alarms (before Android 12) as one that has them', async () => {
+      const phone = pretend()
+      phone.state.exact = new Error('not implemented')
+      await createNativeNotifier(phone.plugin).replaceAll([plan(1)])
+      expect(phone.scheduled).toEqual([expect.objectContaining({ isExactNotification: true })])
+      expect(phone.prompts.settings).toBe(0)
+    })
+
+    it.each(['denied', 'prompt', 'prompt-with-rationale'])('hands no plan over while notifications are "%s", so that the plugin asks for nothing, and still cancels what was pending', async (display) => {
+      const phone = pretend()
+      phone.state.display = display
+      phone.pending.push({ id: 90 })
+      await createNativeNotifier(phone.plugin).replaceAll([plan(1)])
+      expect(phone.plugin.schedule).not.toHaveBeenCalled()
+      expect(phone.prompts).toEqual({ settings: 0, permission: 0 })
+      expect(phone.pending).toEqual([])
+    })
+
+    it('does not hold the next plan up for ever when a call of the phone is never answered', async () => {
+      vi.useFakeTimers()
+      try {
+        const phone = pretend()
+        const notifier = createNativeNotifier(phone.plugin, { timeoutMs: 5_000 })
+        ;(phone.plugin.schedule as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise(() => undefined))
+        const first = notifier.replaceAll([plan(1)])
+        const second = notifier.replaceAll([plan(2)])
+        const firstFailed = expect(first).rejects.toThrow()
+        await vi.advanceTimersByTimeAsync(5_000)
+        await firstFailed
+        await vi.advanceTimersByTimeAsync(0)
+        await second
+        expect(phone.pending.map((n) => n.id)).toEqual([2])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it.each([
+      ['makes the channel', 'createChannel'],
+      ['asks what is pending', 'getPending'],
+      ['cancels what is pending', 'cancel'],
+      ['asks whether notifications are allowed', 'checkPermissions'],
+      ['asks whether exact alarms are allowed', 'checkExactNotificationSetting'],
+      ['schedules', 'schedule'],
+    ] as const)('gives up on the call that %s when the phone never answers it, and does the next plan', async (_what, method) => {
+      vi.useFakeTimers()
+      try {
+        const phone = pretend()
+        phone.pending.push({ id: 90 }) // so that there is something to cancel
+        const notifier = createNativeNotifier(phone.plugin, { timeoutMs: 5_000 })
+        ;(phone.plugin[method] as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise(() => undefined))
+        const first = expect(notifier.replaceAll([plan(1)])).rejects.toThrow()
+        await vi.advanceTimersByTimeAsync(5_000)
+        await first
+        // A question about exact alarms that is not answered is not a yes: scheduling as exact may open the settings.
+        expect(phone.prompts).toEqual({ settings: 0, permission: 0 })
+        await notifier.replaceAll([plan(2)])
+        expect(phone.pending.map((n) => n.id)).toEqual([2])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not time out a call that answers in time, and leaves no timer running behind it', async () => {
+      vi.useFakeTimers()
+      try {
+        const phone = pretend()
+        const notifier = createNativeNotifier(phone.plugin, { timeoutMs: 5_000 })
+        ;(phone.plugin.getPending as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 4_000))
+          return { notifications: [] }
+        })
+        const planning = notifier.replaceAll([plan(1)])
+        await vi.advanceTimersByTimeAsync(4_000)
+        await planning
+        expect(phone.pending.map((n) => n.id)).toEqual([1])
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   it('only cancels when the plan is empty, and does not ask to cancel when nothing is pending', async () => {
