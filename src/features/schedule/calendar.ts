@@ -1,5 +1,5 @@
 import type { Task } from '../tasks/model'
-import { addDays, atTime, dayKey, minuteOfDay, startOfWeek, weekday, WEEKDAY_SHORT, type DayKey } from './time'
+import { addDays, atTime, dayKey, minuteOfDay, startOfWeek, weekday, WEEKDAY_LONG, WEEKDAY_SHORT, type DayKey } from './time'
 
 // The layout of the calendar, worked out from the tasks alone: where each task goes on its day, side by
 // side with the ones that it overlaps, and what a click on an empty place means. A position is a
@@ -7,6 +7,8 @@ import { addDays, atTime, dayKey, minuteOfDay, startOfWeek, weekday, WEEKDAY_SHO
 // nothing and doubles nothing.
 
 const MINUTES_PER_DAY = 1440
+/** The height of an hour of the calendar, in pixels. */
+export const HOUR_PX = 48
 const LENGTH_WHEN_UNKNOWN_MIN = 30
 const SLOT_MIN = 30
 const FIRST_HOUR = 7
@@ -115,8 +117,7 @@ export function layoutRange(tasks: Task[], startKey: DayKey, days: number, optio
 export function slotToDue(key: DayKey, minuteInDay: number): string {
   const rounded = Math.round(minuteInDay / SLOT_MIN) * SLOT_MIN
   const held = Math.min(Math.max(rounded, 0), MINUTES_PER_DAY - SLOT_MIN)
-  const clock = `${String(Math.floor(held / 60)).padStart(2, '0')}:${String(held % 60).padStart(2, '0')}`
-  return atTime(key, clock).toISOString()
+  return atTime(key, formatMinutes(held)).toISOString()
 }
 
 const dayAndMonth = (key: DayKey) => `${key.slice(8, 10)}.${key.slice(5, 7)}`
@@ -138,4 +139,21 @@ export function rangeStart(anchor: DayKey, days: number): DayKey {
 /** The day to move to, a whole range forward or back. */
 export function shiftAnchor(anchor: DayKey, days: number, direction: -1 | 1): DayKey {
   return addDays(anchor, direction * days)
+}
+
+const twoDigits = (n: number) => String(n).padStart(2, '0')
+
+/** A minute of the day as a clock: 570 is "09:30", and 1440, the end of the day, is "24:00". */
+export function formatMinutes(minutes: number): string {
+  return `${twoDigits(Math.floor(minutes / 60))}:${twoDigits(minutes % 60)}`
+}
+
+/** The head of a column: "א׳ 18.10". */
+export function dayHeader(key: DayKey): string {
+  return `${WEEKDAY_SHORT[weekday(key)]} ${dayAndMonth(key)}`
+}
+
+/** The name of a column, for a screen reader and for the button that adds a task on that day: "יום ראשון 18.10". */
+export function dayName(key: DayKey): string {
+  return `יום ${WEEKDAY_LONG[weekday(key)]} ${dayAndMonth(key)}`
 }

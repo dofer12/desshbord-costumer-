@@ -1495,6 +1495,229 @@ a.btn {
   color: var(--crit);
 }
 
+/* The calendar: the days side by side, the hours down the side, and each task a block at the height of its time. */
+.cal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.cal-nav {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.cal-title {
+  flex: 1;
+  min-width: 140px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.cal-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.cal-filter select {
+  padding: 6px 8px;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.cal-scroll {
+  min-height: 320px;
+  max-height: calc(100dvh - 300px);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: 52px repeat(var(--cal-days), minmax(0, 1fr));
+}
+
+.cal-corner,
+.cal-head {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  background: var(--sunken);
+  border-block-end: 1px solid var(--line);
+}
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  border-inline-start: 1px solid var(--line);
+}
+
+.cal-head.is-today {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The button that adds a task on a day, for the keyboard: out of sight until it has the focus. */
+.cal-day-new {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cal-day-new:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0 6px;
+  padding: 2px 8px;
+  overflow: visible;
+  clip-path: none;
+  font-size: 12px;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border-radius: var(--r);
+}
+
+.cal-hours {
+  height: calc(var(--hours) * var(--hour-h));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cal-hours li {
+  height: var(--hour-h);
+  padding-inline-end: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: end;
+}
+
+.cal-col {
+  position: relative;
+  height: calc(var(--hours) * var(--hour-h));
+  cursor: cell;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--hour-h) - 1px),
+    var(--line) calc(var(--hour-h) - 1px),
+    var(--line) var(--hour-h)
+  );
+  border-inline-start: 1px solid var(--line);
+}
+
+.cal-col.is-today::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-soft);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.cal-item {
+  position: absolute;
+  inset-block-start: var(--top);
+  inset-inline-start: calc(var(--column) * 100% / var(--columns));
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0 4px;
+  width: calc(100% / var(--columns));
+  height: var(--height);
+  min-height: 20px;
+  padding: 2px 5px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: start;
+  cursor: pointer;
+  border: 1px solid var(--surface);
+  border-radius: 6px;
+}
+
+.cal-item:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--fg);
+}
+
+.cal-item-time {
+  font-weight: 600;
+}
+
+.cal-item-title {
+  overflow-wrap: anywhere;
+}
+
+.cal-item-customer {
+  width: 100%;
+  opacity: 0.85;
+}
+
+.cal-item.is-late {
+  box-shadow: inset 0 0 0 2px var(--crit);
+}
+
+.cal-item.is-done {
+  opacity: 0.5;
+}
+
+.cal-item.is-done .cal-item-title {
+  text-decoration: line-through;
+}
+
+.cal-now {
+  position: absolute;
+  inset-block-start: var(--top);
+  inset-inline: 0;
+  z-index: 2;
+  height: 0;
+  border-block-start: 2px solid var(--crit);
+  pointer-events: none;
+}
+
+.cal-now::before {
+  content: '';
+  position: absolute;
+  inset-block-start: -5px;
+  inset-inline-start: -4px;
+  width: 8px;
+  height: 8px;
+  background: var(--crit);
+  border-radius: 50%;
+}
+
+@media (max-width: 639px) {
+  .cal-grid {
+    grid-template-columns: 40px repeat(var(--cal-days), minmax(0, 1fr));
+  }
+
+  .cal-scroll {
+    max-height: calc(100dvh - 340px);
+  }
+}
+
 /* A demo build (npm run demo): a strip across the top, with room made for it. */
 .demo-banner {
   position: fixed;

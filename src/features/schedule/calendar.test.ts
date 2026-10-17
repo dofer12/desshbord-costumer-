@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { newTask, type Task } from '../tasks/model'
-import { layoutRange, packDay, rangeStart, rangeTitle, shiftAnchor, slotToDue, type DayItem } from './calendar'
+import { dayHeader, dayName, formatMinutes, layoutRange, packDay, rangeStart, rangeTitle, shiftAnchor, slotToDue, type DayItem } from './calendar'
 
 // The layout of the calendar, worked out from the tasks alone: where each task goes on its day, side by
 // side with the ones it overlaps, and what a click on an empty place means. Every position is the
@@ -430,5 +430,32 @@ describe('rangeStart and shiftAnchor', () => {
     expect(shiftAnchor('2026-10-28', 7, 1)).toBe('2026-11-04')
     expect(shiftAnchor('2026-12-30', 7, 1)).toBe('2027-01-06')
     expect(shiftAnchor('2027-01-02', 7, -1)).toBe('2026-12-26')
+  })
+})
+
+describe('formatMinutes', () => {
+  it.each([
+    [0, '00:00'],
+    [5, '00:05'],
+    [570, '09:30'],
+    [1260, '21:00'],
+    [1439, '23:59'],
+    [1440, '24:00'],
+  ])('writes minute %s of the day as %s', (minutes, clock) => {
+    expect(formatMinutes(minutes)).toBe(clock)
+  })
+})
+
+describe('dayHeader and dayName', () => {
+  it('writes the short weekday and the date for the head of a column', () => {
+    expect(dayHeader('2026-10-18')).toBe('א׳ 18.10')
+    expect(dayHeader('2026-10-24')).toBe('ש׳ 24.10')
+    expect(dayHeader('2027-01-03')).toBe('א׳ 03.01')
+  })
+
+  it('writes the long weekday and the date for the name of a column', () => {
+    expect(dayName('2026-10-18')).toBe('יום ראשון 18.10')
+    expect(dayName('2026-10-23')).toBe('יום שישי 23.10')
+    expect(dayName('2026-10-24')).toBe('יום שבת 24.10')
   })
 })

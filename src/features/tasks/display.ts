@@ -27,6 +27,9 @@ export function formatDue(dueAt: string, now: Date): string {
   return `${weekday} ${day}.${month} · ${due.dueTime}`
 }
 
+/** The colour of a status that the directory does not know. */
+export const UNKNOWN_STATUS_COLOR = '#8a9aa1'
+
 export const TEXT_ON_DARK = '#ffffff'
 export const TEXT_ON_LIGHT = '#14262e'
 

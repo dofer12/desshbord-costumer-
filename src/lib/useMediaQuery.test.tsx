@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { stubMatchMedia } from '../test/matchMedia'
-import { useMediaQuery } from './useMediaQuery'
+import { CALENDAR_THREE_DAYS_QUERY, CALENDAR_WEEK_QUERY, useMediaQuery, WIDE_SCREEN_QUERY } from './useMediaQuery'
 
 function Probe({ query }: { query: string }) {
   return <p>{useMediaQuery(query) ? 'match' : 'no match'}</p>
@@ -53,5 +53,13 @@ describe('useMediaQuery', () => {
     expect(window.matchMedia).toBeUndefined()
     render(<Probe query="(min-width: 500px)" />)
     expect(screen.getByText('no match')).toBeInTheDocument()
+  })
+})
+
+describe('the widths that the screens change at', () => {
+  it('shows a table from 900px, a week of the calendar from 1000px and three days of it from 640px', () => {
+    expect(WIDE_SCREEN_QUERY).toBe('(min-width: 900px)')
+    expect(CALENDAR_WEEK_QUERY).toBe('(min-width: 1000px)')
+    expect(CALENDAR_THREE_DAYS_QUERY).toBe('(min-width: 640px)')
   })
 })

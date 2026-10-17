@@ -1,7 +1,7 @@
 import { Link } from 'react-router'
 import type { Profile } from '../auth/types'
 import { CopyButton } from './CopyButton'
-import { dialHref, formatDue, statusTextColor, taskTitle } from './display'
+import { dialHref, formatDue, statusTextColor, taskTitle, UNKNOWN_STATUS_COLOR } from './display'
 import type { Status } from './gateways'
 import { KIND_LABEL, PRIORITY_LABEL, type Task } from './model'
 import { isOverdue } from './selectors'
@@ -14,8 +14,6 @@ export interface TaskListProps {
   now: Date
   onToggleDone(id: string, done: boolean): void
 }
-
-const UNKNOWN_STATUS = '#8a9aa1'
 
 export function DoneBox({ task, onToggle }: { task: Task; onToggle: TaskListProps['onToggleDone'] }) {
   return (
@@ -47,7 +45,7 @@ export function TitleLink({ task, base = '/tasks' }: { task: Task; base?: string
 
 export function StatusBadge({ task, statuses }: { task: Task; statuses: TaskListProps['statuses'] }) {
   const status = statuses.get(task.status_key)
-  const color = status?.color ?? UNKNOWN_STATUS
+  const color = status?.color ?? UNKNOWN_STATUS_COLOR
   return (
     <span className="status-badge" style={{ background: color, color: statusTextColor(color) }}>
       {status?.name_he ?? task.status_key}
