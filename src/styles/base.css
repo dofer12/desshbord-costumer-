@@ -1957,6 +1957,134 @@ a.btn {
   background: var(--accent-soft);
 }
 
+/* The statuses: a row for each, with its swatch, its name, its colour, whether it is in use, and its place in the order. */
+.statuses {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.statuses-hint {
+  max-width: 70ch;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.status-off {
+  background: var(--sunken);
+}
+
+.status-off input[type='text'] {
+  color: var(--muted);
+}
+
+.status-row .swatch {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-block-start: 8px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+.status-name {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.status-color {
+  flex: 0 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-color .field-error {
+  flex-basis: 100%;
+}
+
+.status-row input[type='text'] {
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 16px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.status-row input[type='text'][aria-invalid='true'] {
+  border-color: var(--crit);
+}
+
+.status-row input[type='text'][readonly] {
+  opacity: 0.7;
+}
+
+.status-hex {
+  width: 108px;
+}
+
+.status-row input[type='color'] {
+  width: 44px;
+  height: 40px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.status-row input[type='color'][disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+}
+
+.status-active input {
+  width: 18px;
+  height: 18px;
+}
+
+.status-moves {
+  display: flex;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.status-moves .btn {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+.status-note {
+  flex-basis: 100%;
+  max-width: 70ch;
+}
+
 /* A question with a few answers, over the page: narrow, and not a whole screen on a phone. */
 .modal-compact {
   width: min(100%, 460px);

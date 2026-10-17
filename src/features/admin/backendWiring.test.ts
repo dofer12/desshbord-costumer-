@@ -14,6 +14,11 @@ describe('the backend of the real app', () => {
     const backend = createSupabaseBackend({} as never)
     expect(Object.keys(backend.admin.users).sort()).toEqual(['create', 'rename', 'resetPassword', 'setActive', 'setRole'])
   })
+
+  it('has the tools for the statuses, which write to the database and have no way to delete', () => {
+    const backend = createSupabaseBackend({} as never)
+    expect(Object.keys(backend.admin.statuses).sort()).toEqual(['add', 'reorder', 'update'])
+  })
 })
 
 describe('the backend of the tests', () => {
@@ -24,6 +29,16 @@ describe('the backend of the tests', () => {
     expect(await fake.backend.admin.users.setRole(DANA.id, 'admin')).toMatchObject({ ok: true, user: { id: DANA.id, role: 'admin' } })
     expect(fake.directory.profiles.find((p) => p.id === DANA.id)?.role).toBe('admin')
     expect((await fake.backend.directory.load()).profiles.find((p) => p.id === DANA.id)?.role).toBe('admin')
+    expect(heard).toHaveBeenCalledTimes(1)
+  })
+
+  it('changes the statuses that its directory shows, and tells the ones who listen', async () => {
+    const fake = createFakeBackend()
+    const heard = vi.fn()
+    fake.backend.directory.subscribe(heard)
+    const row = await fake.backend.admin.statuses.update('processing', { name_he: 'חדש' })
+    expect(row).toMatchObject({ key: 'processing', name_he: 'חדש' })
+    expect((await fake.backend.directory.load()).statuses.find((s) => s.key === 'processing')?.name_he).toBe('חדש')
     expect(heard).toHaveBeenCalledTimes(1)
   })
 
@@ -46,6 +61,26 @@ describe('the backend of the demo', () => {
     const made = await backend.admin.users.create({ email: 'new@moked.invalid', display_name: 'עובד חדש', role: 'employee' })
     expect(made).toMatchObject({ ok: true, user: { display_name: 'עובד חדש', must_change_password: true }, tempPassword: expect.stringMatching(/^[A-Za-z2-9]{16}$/) })
     expect((await backend.directory.load()).profiles).toHaveLength(before.length + 1)
+  })
+
+  it('lets the user of the demo, who is an administrator, make a status and put it first', async () => {
+    const backend = createDemoBackend()
+    const before = (await backend.directory.load()).statuses
+    expect(before).toHaveLength(17)
+    const made = await backend.admin.statuses.add({ name_he: 'סטטוס חדש', color: '#112233' })
+    expect(made).toMatchObject({ is_active: true, sort: 18 })
+    await backend.admin.statuses.reorder([made.key, ...before.map((s) => s.key)])
+    const after = (await backend.directory.load()).statuses
+    expect(after).toHaveLength(18)
+    expect(after[0].key).toBe(made.key)
+    expect(after.map((s) => s.sort)).toEqual(Array.from({ length: 18 }, (_, i) => i + 1))
+  })
+
+  it('has its own statuses in every demo that is made', async () => {
+    const one = createDemoBackend()
+    const two = createDemoBackend()
+    await one.admin.statuses.update('processing', { name_he: 'שם אחר' })
+    expect((await two.directory.load()).statuses.find((s) => s.key === 'processing')?.name_he).toBe('בטיפול')
   })
 
   it('does not let the user of the demo block themselves or leave the team without an administrator', async () => {

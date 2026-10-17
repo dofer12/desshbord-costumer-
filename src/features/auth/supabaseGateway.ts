@@ -1,13 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { apiError } from '../../lib/apiError'
 import { isNetworkError } from './errors'
 import type { AuthGateway, Profile } from './types'
 
 const PROFILE_COLUMNS = 'id, email, display_name, role, is_active, must_change_password, default_remind_min'
-
-/** An error of the database API with the HTTP status of the answer, so that the store can tell "server trouble" from "not allowed". */
-function apiError(error: { message: string; code?: string }, status: number) {
-  return Object.assign(new Error(error.message), { code: error.code, status })
-}
 
 /** Adapts supabase-js to the small interface the auth store depends on. */
 export function createSupabaseGateway(client: SupabaseClient): AuthGateway {

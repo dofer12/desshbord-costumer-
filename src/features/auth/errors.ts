@@ -46,7 +46,7 @@ export function toHebrewAuthError(err: unknown): string {
 }
 
 /** The request got no usable answer: there is no connection, it took too long, or the server is in trouble. */
-function gotNoAnswer(e: ErrorLike): boolean {
+export function gotNoAnswer(e: ErrorLike): boolean {
   const status = typeof e.status === 'number' ? e.status : null
   return isNetworkError(e) || status === 0 || status === 408 || (status !== null && status >= 500)
 }

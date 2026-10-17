@@ -200,7 +200,8 @@ export function createMemoryDirectory(options: {
       async load() {
         directory.loads++
         return {
-          statuses: clone(directory.statuses),
+          // In the order of their places, as the database gives them.
+          statuses: clone(directory.statuses).sort((a, b) => a.sort - b.sort),
           profiles: clone(directory.profiles),
           settings: clone(directory.settings),
         }

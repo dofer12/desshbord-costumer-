@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TEMP_PASSWORD_ALPHABET, TEMP_PASSWORD_LENGTH } from '../../supabase/functions/admin-users/logic'
 import type { Profile } from '../features/auth/types'
+import type { Task } from '../features/tasks/model'
 import { stubClipboard } from './clipboard'
 import type { FakeBackend } from './fakeBackend'
 import { DANA, OWNER } from './fakeGateway'
@@ -37,6 +38,8 @@ interface Options {
   /** Everyone that the pretend server holds. The person who is signed in and Dana, unless it says otherwise. */
   people?: Profile[]
   dataRouter?: boolean
+  /** The tasks that the pretend server holds. */
+  tasks?: Task[]
   /** Changes the pretend server before the app starts. */
   backend?: (fake: FakeBackend) => void
 }
@@ -56,6 +59,7 @@ export async function openAdmin(options: Options = {}) {
     configureBackend: (backend) => {
       backend.directory.profiles = (options.people ?? [me, DANA]).map((p) => ({ ...p }))
       backend.actAs(me.id)
+      for (const task of options.tasks ?? []) backend.tasks.rows.set(task.id, task)
       options.backend?.(backend)
     },
   })

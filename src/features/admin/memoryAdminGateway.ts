@@ -1,14 +1,18 @@
+import { apiError } from '../../lib/apiError'
 import type { Profile } from '../auth/types'
 import { handleAdminRequest, type AdminDeps, type AdminResult } from '../../../supabase/functions/admin-users/logic'
 import type { MemoryDirectory } from '../tasks/memoryGateways'
 import type { AdminGateway, UserOutcome } from './gateways'
+import { cleanStatusPatch, newStatusRow } from './statusRules'
 
 // The administrator tools with no server behind them, for the demo and for the tests of the screens. It
 // is the rules of the real function (supabase/functions/admin-users/logic.ts) over the profiles of a memory
 // directory: what it answers is what the real one answers, because it is the same code, and the services
 // under it behave as the database does where the screens can tell the difference (a name is not used twice,
 // the last administrator stays). The profiles are those of the directory, which is told when they change,
-// as the live connection of the real server tells the app.
+// as the live connection of the real server tells the app. The statuses are the rows of the directory:
+// they are written by whoever is an active administrator, as the policies of the database say, and fail
+// as the database API does (an error with `code` and `status`).
 
 const TOKEN = 'memory-token'
 /** The ids of the people of a demo and of the tests are not UUIDs: any plain word will do. */
@@ -35,12 +39,20 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
   let made = 0
   const find = (test: (profile: Profile) => boolean) => directory.profiles.find(test)
   const copy = (profile: Profile | undefined): Profile | null => (profile ? { ...profile } : null)
+  const actingUserId = () => (typeof options.currentUserId === 'function' ? options.currentUserId() : options.currentUserId)
+
+  /** The policies of the database: nobody signed in is not heard at all, and the statuses are written by an active administrator only. */
+  function requireAdministrator(): void {
+    const id = actingUserId()
+    if (id === null) throw apiError({ message: 'JWT expired', code: 'PGRST301' }, 401)
+    const me = find((profile) => profile.id === id)
+    if (!me || me.role !== 'admin' || !me.is_active) {
+      throw apiError({ message: 'new row violates row-level security policy for table "statuses"', code: '42501' }, 403)
+    }
+  }
 
   const deps: AdminDeps = {
-    identify: async (token) => {
-      if (token !== TOKEN) return null
-      return typeof options.currentUserId === 'function' ? options.currentUserId() : options.currentUserId
-    },
+    identify: async (token) => (token === TOKEN ? actingUserId() : null),
     profile: async (id) => copy(find((p) => p.id === id)),
     profileByName: async (name) => copy(find((p) => same(p.display_name, name))),
     profileByEmail: async (email) => copy(find((p) => same(p.email, email))),
@@ -89,6 +101,39 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
       setActive: (userId, isActive) => run({ action: 'set_active', user_id: userId, is_active: isActive }),
       setRole: (userId, role) => run({ action: 'set_role', user_id: userId, role }),
       rename: (userId, displayName) => run({ action: 'rename', user_id: userId, display_name: displayName }),
+    },
+    statuses: {
+      async add(input) {
+        requireAdministrator()
+        const row = newStatusRow(input, directory.statuses)
+        directory.statuses.push(row)
+        directory.changed()
+        return { ...row }
+      },
+
+      async update(key, patch) {
+        const clean = cleanStatusPatch(patch)
+        requireAdministrator()
+        const found = directory.statuses.find((status) => status.key === key)
+        // What the database API says when one row was asked for and there is none.
+        if (!found) throw apiError({ message: 'JSON object requested, multiple (or no) rows returned', code: 'PGRST116' }, 406)
+        Object.assign(found, clean)
+        directory.changed()
+        return { ...found }
+      },
+
+      async reorder(keys) {
+        requireAdministrator()
+        let changed = false
+        for (const [index, key] of keys.entries()) {
+          const found = directory.statuses.find((status) => status.key === key)
+          if (found && found.sort !== index + 1) {
+            found.sort = index + 1
+            changed = true
+          }
+        }
+        if (changed) directory.changed()
+      },
     },
   }
 }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { apiError, type ApiError } from '../../lib/apiError'
 import type { Profile } from '../auth/types'
 import type {
   Attachment,
@@ -24,14 +25,7 @@ const BUCKET = 'task-files'
 const SIGNED_URL_SECONDS = 3600
 const PROFILE_COLUMNS = 'id,email,display_name,role,is_active,must_change_password,default_remind_min'
 
-/** An error that carries the HTTP status (0 when the server was not reached), as the auth gateway's do. */
-type GatewayError = Error & { code?: string; status: number }
-
-function apiError(error: { message: string; code?: string }, status: number): GatewayError {
-  return Object.assign(new Error(error.message), { code: error.code, status })
-}
-
-function storageError(error: { message: string; status?: number }): GatewayError {
+function storageError(error: { message: string; status?: number }): ApiError {
   // The storage client reports a connection that is down without a status.
   return Object.assign(new Error(error.message), { status: typeof error.status === 'number' ? error.status : 0 })
 }

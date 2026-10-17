@@ -1,10 +1,11 @@
 import type { Profile, Role } from '../auth/types'
+import type { Status } from '../tasks/gateways'
 import type { AdminErrorCode } from '../../../supabase/functions/admin-users/logic'
 
 // What the screens of the administrator need from outside the app, as plain interfaces: the real thing
 // calls the Edge Function admin-users and the tables of the project (supabaseAdminGateway.ts), and the demo
 // and the tests use the pretend server of memoryAdminGateway.ts. More of it is added by the tasks that
-// follow (statuses, settings, the backup, the tasks that were deleted).
+// follow (settings, the backup, the tasks that were deleted).
 
 export type { AdminErrorCode }
 
@@ -27,8 +28,32 @@ export interface AdminUsersGateway {
   rename(userId: string, displayName: string): Promise<UserOutcome>
 }
 
+/** The columns of a status that can be changed. The key never is: tasks keep their status by it. */
+export type StatusPatch = Partial<Pick<Status, 'name_he' | 'color' | 'sort' | 'is_active'>>
+
+/** What a new status is made of. The key, the place and the state are not the caller's to say. */
+export interface NewStatus {
+  name_he: string
+  color: string
+}
+
+/**
+ * The statuses of the tasks, which the administrators change in the tables themselves: the policies of
+ * the database let only them. A write that fails throws an error that carries `code` and `status` of the
+ * answer of the database API (see writeErrors.ts); a status is never deleted, so there is no way to.
+ */
+export interface AdminStatusesGateway {
+  /** Makes an active status at the end of the list, with a key of its own. Resolves with the row that was made. */
+  add(input: NewStatus): Promise<Status>
+  /** Changes the columns that are given, and resolves with the status as it is now. */
+  update(key: string, patch: StatusPatch): Promise<Status>
+  /** Writes the places 1, 2, 3 and so on, in the order of the keys. A key that is not on the list keeps its place. */
+  reorder(keys: string[]): Promise<void>
+}
+
 export interface AdminGateway {
   users: AdminUsersGateway
+  statuses: AdminStatusesGateway
 }
 
 /** What an administrator is told when a call about a person fails: in the plural of the imperative, with no word of the server. */

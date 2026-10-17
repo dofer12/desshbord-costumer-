@@ -13,7 +13,7 @@ export interface ProfileFormErrors {
 export type ProfileFormResult = { ok: true; input: ProfileInput } | { ok: false; errors: ProfileFormErrors }
 
 /** A tab, a line break and the other characters that a list or a log line could be spoiled by. */
-function hasControlCharacter(text: string): boolean {
+export function hasControlCharacter(text: string): boolean {
   return [...text].some((character) => {
     const code = character.codePointAt(0) ?? 0
     return code <= 0x1f || (code >= 0x7f && code <= 0x9f)

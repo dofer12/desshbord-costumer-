@@ -3,6 +3,7 @@ import { AdminPage } from './features/admin/AdminPage'
 import { AdminStub } from './features/admin/AdminStub'
 import { EmployeesPage } from './features/admin/EmployeesPage'
 import { RequireAdmin } from './features/admin/RequireAdmin'
+import { StatusesPage } from './features/admin/StatusesPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { ProfilePage } from './features/auth/ProfilePage'
 import { AuthShell, RequireAuth } from './features/auth/routes'
@@ -50,7 +51,7 @@ export function App({ serverHost }: { serverHost: string }) {
               <Route path="admin" element={<AdminPage />}>
                 <Route index element={<Navigate to="employees" replace />} />
                 <Route path="employees" element={<EmployeesPage />} />
-                <Route path="statuses" element={<AdminStub title="סטטוסים" />} />
+                <Route path="statuses" element={<StatusesPage />} />
                 <Route path="settings" element={<AdminStub title="הגדרות" />} />
                 <Route path="import" element={<AdminStub title="ייבוא" />} />
                 <Route path="backup" element={<AdminStub title="גיבוי" />} />

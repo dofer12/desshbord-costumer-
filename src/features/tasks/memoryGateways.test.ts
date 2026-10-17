@@ -243,6 +243,13 @@ describe('the in-memory directory gateway', () => {
     expect(memory.loads).toBe(2)
   })
 
+  it('gives the statuses in the order of their places, as the database does, and holds them as they were put', async () => {
+    const status = (key: string, sort: number) => ({ key, name_he: key, color: '#22a559', sort, is_active: true })
+    const memory = createMemoryDirectory({ statuses: [status('c', 3), status('a', 1), status('b', 2)], profiles: [] })
+    expect((await memory.gateway.load()).statuses.map((s) => s.key)).toEqual(['a', 'b', 'c'])
+    expect(memory.statuses.map((s) => s.key)).toEqual(['c', 'a', 'b'])
+  })
+
   it('takes the settings that it is given, and tells its subscribers about a change until they leave', async () => {
     const memory = createMemoryDirectory({
       statuses: [],
