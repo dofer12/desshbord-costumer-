@@ -263,6 +263,31 @@ describe('TodayPage: postponing', () => {
     expect(fake.tasks.upserts).toEqual([{ id: 'a', patch: { due_at: at(32) } }])
   })
 
+  it('moves a task twice when it is put off twice, the second time from the time that it was put off to', async () => {
+    const { fake } = await mount({ tasks: week() })
+    choose('לאסוף מקרר', '30')
+    expect(item('לאסוף מקרר')).toHaveTextContent('היום · 13:15')
+    choose('לאסוף מקרר', '30')
+    expect(item('לאסוף מקרר')).toHaveTextContent('היום · 13:45')
+    await settle()
+    expect(fake.tasks.upserts.at(-1)).toEqual({ id: 'soon1', patch: { due_at: at(105) } })
+  })
+
+  it('shows a task that is put off while the phone is offline at once, and sends the change when it is online again', async () => {
+    const { fake } = await mount({ tasks: week() })
+    fake.tasks.setOffline(true)
+    choose('לאסוף מקרר', '30')
+    // The screen has the new time at once, and the server has heard nothing yet.
+    expect(item('לאסוף מקרר')).toHaveTextContent('היום · 13:15')
+    await settle(65_000)
+    expect(fake.tasks.upserts).toEqual([])
+    expect(item('לאסוף מקרר')).toHaveTextContent('היום · 13:15')
+
+    fake.tasks.setOffline(false)
+    await settle(35_000)
+    expect(fake.tasks.upserts).toEqual([{ id: 'soon1', patch: { due_at: at(75) } }])
+  })
+
   it('forgets the snooze of a task that is put off, so that the new time starts clean', async () => {
     const soon = scheduled('soon1', { due_at: at(45), title: 'לאסוף מקרר' })
     localStorage.setItem(snoozeKey(DANA.id), JSON.stringify({ soon1: { until: NOW.getTime() + 8 * MIN, due: soon.due_at } }))
