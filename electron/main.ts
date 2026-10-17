@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { createCrashRecovery } from './crashRecovery.js'
 import { createTrayBehavior, SHOW_WINDOW_CHANNEL, wireTray } from './trayBehavior.js'
 
 const APP_ID = 'io.github.dofer12.moked'
@@ -131,6 +132,18 @@ function createWindow() {
   win.on('closed', () => {
     mainWindow = null
   })
+  if (stayInTray) {
+    // The reminders are timers of the page, and the window lives for days in the tray: when the page is
+    // gone (a crash, running out of memory) so are the reminders, and nothing rings. It is loaded again.
+    const recovery = createCrashRecovery({
+      now: Date.now,
+      reload: () => {
+        if (!win.isDestroyed()) win.webContents.reload()
+      },
+      later: (run, ms) => void setTimeout(run, ms),
+    })
+    win.webContents.on('render-process-gone', (_event, details) => void recovery.onGone(details.reason))
+  }
 
   void win.loadFile(WEB_ENTRY)
   if (smoke) void runSmokeTest(win)
