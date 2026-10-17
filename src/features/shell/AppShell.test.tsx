@@ -416,6 +416,18 @@ describe('the user menu', () => {
     expect(screen.getByText('תפקיד: מנהל')).toBeInTheDocument()
   })
 
+  it('has a link to the profile of the person, and closes behind it', async () => {
+    await renderShell()
+    const user = userEvent.setup()
+    const toggle = screen.getByRole('button', { name: 'דנה' })
+    expect(screen.queryByRole('link', { name: 'הפרופיל שלי' })).not.toBeInTheDocument()
+    await user.click(toggle)
+    const link = screen.getByRole('link', { name: 'הפרופיל שלי' })
+    expect(link).toHaveAttribute('href', '/profile')
+    await user.click(link)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('closes on the Escape key and again on the same button', async () => {
     await renderShell()
     const user = userEvent.setup()

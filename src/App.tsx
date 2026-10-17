@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { LoginPage } from './features/auth/LoginPage'
+import { ProfilePage } from './features/auth/ProfilePage'
 import { AuthShell, RequireAuth } from './features/auth/routes'
 import { CalendarPage } from './features/schedule/CalendarPage'
 import { TodayPage } from './features/schedule/TodayPage'
@@ -40,6 +41,7 @@ export function App({ serverHost }: { serverHost: string }) {
             <Route path="calendar" element={<CalendarPage />}>
               {cardRoutes}
             </Route>
+            <Route path="profile" element={<ProfilePage />} />
           </Route>
         </Route>
       </Route>

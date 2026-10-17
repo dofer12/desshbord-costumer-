@@ -4,8 +4,27 @@ import type { AuthGateway, Profile } from './types'
 
 const PROFILE_COLUMNS = 'id, email, display_name, role, is_active, must_change_password, default_remind_min'
 
+/** An error of the database API with the HTTP status of the answer, so that the store can tell "server trouble" from "not allowed". */
+function apiError(error: { message: string; code?: string }, status: number) {
+  return Object.assign(new Error(error.message), { code: error.code, status })
+}
+
 /** Adapts supabase-js to the small interface the auth store depends on. */
 export function createSupabaseGateway(client: SupabaseClient): AuthGateway {
+  async function readProfile(userId: string): Promise<Profile | null> {
+    const { data, error, status } = await client
+      .from('profiles')
+      .select(PROFILE_COLUMNS)
+      .eq('id', userId)
+      // The library would keep retrying a failed request for several seconds. The store has its
+      // own answer to an unreachable server (a retry screen), so it must hear about it at once.
+      .retry(false)
+      .maybeSingle()
+    // The HTTP status travels with the error: it tells "server trouble" from "not allowed".
+    if (error) throw apiError(error, status)
+    return (data as Profile | null) ?? null
+  }
+
   return {
     async getStoredUserId() {
       const { data, error } = await client.auth.getSession()
@@ -27,18 +46,32 @@ export function createSupabaseGateway(client: SupabaseClient): AuthGateway {
       if (error) throw error
     },
 
-    async fetchProfile(userId) {
-      const { data, error, status } = await client
-        .from('profiles')
-        .select(PROFILE_COLUMNS)
-        .eq('id', userId)
-        // The library would keep retrying a failed request for several seconds. The store has its
-        // own answer to an unreachable server (a retry screen), so it must hear about it at once.
-        .retry(false)
-        .maybeSingle()
-      // The HTTP status travels with the error: it tells "server trouble" from "not allowed".
-      if (error) throw Object.assign(new Error(error.message), { code: error.code, status })
-      return (data as Profile | null) ?? null
+    fetchProfile: readProfile,
+
+    async changePassword(newPassword) {
+      const { error } = await client.auth.updateUser({ password: newPassword })
+      if (error) throw error
+    },
+
+    async clearMustChangePassword() {
+      const { error, status } = await client.rpc('clear_must_change_password')
+      if (error) throw apiError(error, status)
+    },
+
+    async updateMyProfile(input) {
+      const { data, error: sessionError } = await client.auth.getSession()
+      if (sessionError && isNetworkError(sessionError)) throw sessionError
+      const userId = data.session?.user.id
+      if (!userId) throw Object.assign(new Error('There is no session.'), { status: 401 })
+      const { error, status } = await client.rpc('update_my_profile', {
+        p_display_name: input.display_name,
+        p_default_remind_min: input.default_remind_min,
+      })
+      if (error) throw apiError(error, status)
+      const profile = await readProfile(userId)
+      // The function ran as an active member, so the row is there to be seen; a person who was blocked in between sees nothing.
+      if (!profile) throw Object.assign(new Error('The profile cannot be seen.'), { status: 403 })
+      return profile
     },
 
     onSessionEnded(callback) {

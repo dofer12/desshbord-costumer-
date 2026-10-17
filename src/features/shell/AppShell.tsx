@@ -2,38 +2,14 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { useNow } from '../../lib/useNow'
 import { useAuth } from '../auth/authContext'
+import { ROLE_LABEL } from '../auth/roles'
+import { useMembershipCheck } from '../auth/useMembershipCheck'
 import { ReminderStrip } from '../schedule/ReminderStrip'
 import { RemindersProvider } from '../schedule/RemindersProvider'
 import { todayBadge } from '../schedule/today'
 import { taskTitle } from '../tasks/display'
 import { MY_OPEN_TASKS, filterTasks } from '../tasks/selectors'
 import { useTasks } from '../tasks/tasksContext'
-
-const ROLE_LABEL = { admin: 'מנהל', employee: 'עובד' } as const
-
-/** How often a signed-in user is checked to still be an active member. */
-const MEMBERSHIP_CHECK_MS = 5 * 60_000
-
-/**
- * Looks at the profile of the signed-in user when the app comes back to the front and every five
- * minutes. A user who was deactivated while the app was open is sent back to the login screen, with
- * the reason, instead of looking at a list that has silently gone empty.
- */
-function useMembershipCheck() {
-  const recheck = useAuth((state) => state.recheck)
-  useEffect(() => {
-    const check = () => void recheck()
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') check()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    const timer = setInterval(check, MEMBERSHIP_CHECK_MS)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible)
-      clearInterval(timer)
-    }
-  }, [recheck])
-}
 
 const countText = (n: number, one: string, many: string) => (n === 1 ? one : `${n} ${many}`)
 
@@ -239,6 +215,9 @@ function UserMenu({ serverHost }: { serverHost: string }) {
           <p className="sub">
             גרסה <span className="num">{__APP_VERSION__}</span> · שרת: <span className="num">{serverHost}</span>
           </p>
+          <Link to="/profile" className="btn" onClick={() => setOpen(false)}>
+            הפרופיל שלי
+          </Link>
           <button type="button" className="btn" onClick={() => void signOut()}>
             התנתקות
           </button>

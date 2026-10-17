@@ -3,7 +3,7 @@ import type { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addUser, createDb } from './helpers/pg'
+import { addUser, as, createDb } from './helpers/pg'
 
 // 0003_admin.sql: the guard that keeps the last active administrator in place, and the end of the
 // sessions of a user. The guard is a trigger, so it holds for every route to the table: the app's
@@ -150,6 +150,79 @@ describe('revoke_user_sessions', () => {
     expect(await can('anon')).toBe(false)
     expect(await can('authenticated')).toBe(false)
     expect(await can('service_role')).toBe(true)
+  })
+})
+
+// The form of the profile takes a name of 1 to 60 characters and a reminder of 0 to 1440 minutes. The function
+// that saves them holds the same lines, so that a request that does not come from the form meets them too.
+describe('the profile that a person changes for themselves', () => {
+  let dana: string
+
+  beforeEach(async () => {
+    dana = await employee('dana@example.com')
+  })
+
+  const call = (name: string | null, reminder: number | null) =>
+    as(db, { id: dana }, () => db.query('select public.update_my_profile($1, $2)', [name, reminder]))
+  const mine = async () => {
+    const r = await db.query<{ display_name: string; default_remind_min: number }>(
+      'select display_name, default_remind_min from public.profiles where id = $1',
+      [dana],
+    )
+    return r.rows[0]
+  }
+
+  it('takes a name of 60 characters and a reminder of a whole day, which are the largest', async () => {
+    await call('א'.repeat(60), 1440)
+    expect(await mine()).toEqual({ display_name: 'א'.repeat(60), default_remind_min: 1440 })
+  })
+
+  it('counts the name in characters and not in bytes, and after trimming it', async () => {
+    // Sixty Hebrew letters are 120 bytes, and a name with spaces around it is as long as the name.
+    await call(`  ${'ב'.repeat(60)}  `, 15)
+    expect((await mine()).display_name).toBe('ב'.repeat(60))
+  })
+
+  it('refuses a name of 61 characters, and keeps the profile as it was', async () => {
+    const before = await mine()
+    await expect(call('א'.repeat(61), 15)).rejects.toMatchObject({ code: '22023', message: expect.stringMatching(/display name.*60/i) })
+    expect(await mine()).toEqual(before)
+  })
+
+  it('refuses a name with a control character in it: a tab, a line break, a character of the C1 range', async () => {
+    const before = await mine()
+    for (const name of ['דנה\tכהן', 'דנה\nכהן', 'דנה\rכהן', 'דנה\u0007כהן', 'דנה\u007fכהן', 'דנה\u0085כהן']) {
+      await expect(call(name, 15), JSON.stringify(name)).rejects.toMatchObject({ code: '22023', message: expect.stringMatching(/control character/i) })
+    }
+    expect(await mine()).toEqual(before)
+  })
+
+  it('takes every other kind of character in a name', async () => {
+    await call("דנה כהן-לוי (המוקד) 2 O'Neil 😀", 15)
+    expect((await mine()).display_name).toBe("דנה כהן-לוי (המוקד) 2 O'Neil 😀")
+  })
+
+  it('refuses a reminder of more than a day, and keeps the profile as it was', async () => {
+    const before = await mine()
+    await expect(call('Dana', 1441)).rejects.toMatchObject({ code: '22023', message: expect.stringMatching(/reminder.*1440/i) })
+    await expect(call('Dana', 2_000_000_000)).rejects.toMatchObject({ code: '22023' })
+    expect(await mine()).toEqual(before)
+  })
+
+  it('still takes a reminder of nought, and still refuses a negative or a missing one', async () => {
+    await call('Dana', 0)
+    expect((await mine()).default_remind_min).toBe(0)
+    await expect(call('Dana', -1)).rejects.toMatchObject({ code: '22023' })
+    await expect(call('Dana', null)).rejects.toMatchObject({ code: '22023' })
+  })
+
+  it('keeps the grants of 0002: signed-in members may call it, and the visitor who is not signed in may not', async () => {
+    const can = async (role: string) => {
+      const r = await db.query<{ ok: boolean }>(`select has_function_privilege($1, 'public.update_my_profile(text, integer)', 'execute') as ok`, [role])
+      return r.rows[0].ok
+    }
+    expect(await can('authenticated')).toBe(true)
+    expect(await can('anon')).toBe(false)
   })
 })
 

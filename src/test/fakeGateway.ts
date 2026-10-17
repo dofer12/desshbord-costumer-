@@ -27,11 +27,17 @@ export interface FakeGateway {
   signIn: Mock<AuthGateway['signIn']>
   signOut: Mock<AuthGateway['signOut']>
   fetchProfile: Mock<AuthGateway['fetchProfile']>
+  changePassword: Mock<AuthGateway['changePassword']>
+  clearMustChangePassword: Mock<AuthGateway['clearMustChangePassword']>
+  updateMyProfile: Mock<AuthGateway['updateMyProfile']>
   /** Simulates the backend ending the session (revoked token, removed user). */
   endSessionFromServer(): void
 }
 
-/** A gateway whose defaults are: no stored session, sign-in as DANA succeeds. Override per test. */
+/**
+ * A gateway whose defaults are: no stored session, sign-in as DANA succeeds, a new password is accepted,
+ * and the profile that is saved comes back as it was sent (on top of DANA). Override per test.
+ */
 export function createFakeGateway(): FakeGateway {
   let listener: (() => void) | null = null
 
@@ -39,12 +45,18 @@ export function createFakeGateway(): FakeGateway {
   const signIn = vi.fn<AuthGateway['signIn']>().mockResolvedValue(DANA.id)
   const signOut = vi.fn<AuthGateway['signOut']>().mockResolvedValue(undefined)
   const fetchProfile = vi.fn<AuthGateway['fetchProfile']>().mockResolvedValue(DANA)
+  const changePassword = vi.fn<AuthGateway['changePassword']>().mockResolvedValue(undefined)
+  const clearMustChangePassword = vi.fn<AuthGateway['clearMustChangePassword']>().mockResolvedValue(undefined)
+  const updateMyProfile = vi.fn<AuthGateway['updateMyProfile']>(async (input) => ({ ...DANA, ...input }))
 
   const gateway: AuthGateway = {
     getStoredUserId,
     signIn,
     signOut,
     fetchProfile,
+    changePassword,
+    clearMustChangePassword,
+    updateMyProfile,
     onSessionEnded(callback) {
       listener = callback
       return () => {
@@ -59,6 +71,9 @@ export function createFakeGateway(): FakeGateway {
     signIn,
     signOut,
     fetchProfile,
+    changePassword,
+    clearMustChangePassword,
+    updateMyProfile,
     endSessionFromServer: () => listener?.(),
   }
 }

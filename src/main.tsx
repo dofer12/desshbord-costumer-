@@ -7,7 +7,7 @@ import { createAuthStore, type AuthStore } from './features/auth/authStore'
 import { createSupabaseGateway } from './features/auth/supabaseGateway'
 import { ConfigErrorScreen } from './features/config/ConfigErrorScreen'
 import { DemoBanner } from './features/demo/DemoBanner'
-import { createDemoBackend } from './features/demo/demoBackend'
+import { createDemoBackend, createDemoDirectory } from './features/demo/demoBackend'
 import { createDemoGateway } from './features/demo/demoGateway'
 import { createMemoryNotifier, type Notifier } from './features/schedule/notifier'
 import { NotifierContext } from './features/schedule/remindersContext'
@@ -55,7 +55,9 @@ if (import.meta.env.MODE === 'demo') {
   // demoBuild.test.ts.
   document.documentElement.classList.add('demo-mode')
   // The demo has no permission to ask for and nothing to show on a phone: its reminders are the ones on the screen.
-  mount(createAuthStore(createDemoGateway()), createDemoBackend(), 'הדגמה', { notifier: createMemoryNotifier('granted') })
+  // The person who signs in and the people of the team are one directory, so a name changed on the profile is seen by the administrator's screens.
+  const people = createDemoDirectory()
+  mount(createAuthStore(createDemoGateway(people)), createDemoBackend(undefined, people), 'הדגמה', { notifier: createMemoryNotifier('granted') })
 } else {
   try {
     const config = loadConfig(import.meta.env)

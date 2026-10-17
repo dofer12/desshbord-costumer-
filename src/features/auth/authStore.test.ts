@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createFakeGateway, DANA } from '../../test/fakeGateway'
+import { createFakeGateway, DANA, OWNER } from '../../test/fakeGateway'
 import { createAuthStore, SLOW_START_MS } from './authStore'
-import { AUTH_MESSAGES } from './errors'
+import { AUTH_MESSAGES, PASSWORD_MESSAGES, PROFILE_MESSAGES } from './errors'
+import type { Profile } from './types'
 
 function setup() {
   const fake = createFakeGateway()
@@ -415,5 +416,337 @@ describe('recheck', () => {
     answer(null) // the old answer says "no profile"
     await checking
     expect(t.state()).toMatchObject({ status: 'signedIn', profile: DANA })
+  })
+
+  it('shows at once a profile that has been asked to choose a new password, so that the app is held back', async () => {
+    const t = await signedIn()
+    t.fake.fetchProfile.mockResolvedValue({ ...DANA, must_change_password: true })
+    await t.state().recheck()
+    expect(t.state()).toMatchObject({ status: 'signedIn', profile: { must_change_password: true } })
+  })
+})
+
+// The password that a person chooses for themselves. The server has two steps for it (the password, then
+// the word that the person has chosen one), and either can fail without the other, so the store has to
+// cope with the half that was done.
+
+const NEW_PASSWORD = 'a-password-of-my-own'
+const MUST_CHANGE: Profile = { ...DANA, must_change_password: true }
+const failure = (fields: object) => Object.assign(new Error('the server said no'), fields)
+const SAME = failure({ name: 'AuthApiError', code: 'same_password', status: 422 })
+
+/** Signed in as somebody who has to choose a password. */
+async function signedInWithTemporaryPassword() {
+  const t = setup()
+  t.fake.getStoredUserId.mockResolvedValue(DANA.id)
+  t.fake.fetchProfile.mockResolvedValue(MUST_CHANGE)
+  await t.state().init()
+  expect(t.state()).toMatchObject({ status: 'signedIn', profile: MUST_CHANGE })
+  return t
+}
+
+async function signedInAsUsual() {
+  const t = setup()
+  t.fake.getStoredUserId.mockResolvedValue(DANA.id)
+  await t.state().init()
+  return t
+}
+
+describe('changePassword', () => {
+  it('sets the password, then says that the person has one of their own, and the profile no longer asks', async () => {
+    const t = await signedInWithTemporaryPassword()
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+    expect(t.fake.changePassword).toHaveBeenCalledExactlyOnceWith(NEW_PASSWORD)
+    expect(t.fake.clearMustChangePassword).toHaveBeenCalledTimes(1)
+    expect(t.fake.changePassword.mock.invocationCallOrder[0]).toBeLessThan(t.fake.clearMustChangePassword.mock.invocationCallOrder[0])
+    expect(t.state()).toMatchObject({ status: 'signedIn', profile: { ...DANA, must_change_password: false } })
+  })
+
+  it('does not say it for a person who was never asked: the profile page changes a password the same way', async () => {
+    const t = await signedInAsUsual()
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+    expect(t.fake.changePassword).toHaveBeenCalledExactlyOnceWith(NEW_PASSWORD)
+    expect(t.fake.clearMustChangePassword).not.toHaveBeenCalled()
+    expect(t.state().profile).toEqual(DANA)
+  })
+
+  it.each([
+    ['the temporary password typed again', SAME, PASSWORD_MESSAGES.same_password],
+    ['a weak password', failure({ name: 'AuthWeakPasswordError', code: 'weak_password', status: 422 }), PASSWORD_MESSAGES.weak_password],
+    ['a session that has ended', failure({ name: 'AuthSessionMissingError', status: 400 }), PASSWORD_MESSAGES.session],
+    ['a server that cannot be reached', new TypeError('Failed to fetch'), PASSWORD_MESSAGES.network],
+    ['a failure that nobody foresaw', failure({ status: 400 }), PASSWORD_MESSAGES.generic],
+  ])('answers with a sentence, and changes nothing, after %s', async (_what, error, sentence) => {
+    const t = await signedInWithTemporaryPassword()
+    t.fake.changePassword.mockRejectedValue(error)
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBe(sentence)
+    expect(t.fake.clearMustChangePassword).not.toHaveBeenCalled()
+    expect(t.state()).toMatchObject({ status: 'signedIn', profile: MUST_CHANGE })
+    expect(t.fake.signOut).not.toHaveBeenCalled()
+  })
+
+  describe('when the password was set and the word about it was not', () => {
+    async function halfDone() {
+      const t = await signedInWithTemporaryPassword()
+      t.fake.clearMustChangePassword.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.incomplete)
+      expect(t.state().profile).toEqual(MUST_CHANGE)
+      // From now on the server has this password, and says so to the same one.
+      t.fake.changePassword.mockRejectedValue(SAME)
+      return t
+    }
+
+    it('tells the person to try again, and the second try with the same password finishes the work', async () => {
+      const t = await halfDone()
+      expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+      expect(t.fake.changePassword).toHaveBeenCalledTimes(2)
+      expect(t.fake.clearMustChangePassword).toHaveBeenCalledTimes(2)
+      expect(t.state().profile).toEqual({ ...DANA, must_change_password: false })
+    })
+
+    it('keeps telling the person to try again as long as the word does not get through', async () => {
+      const t = await halfDone()
+      t.fake.clearMustChangePassword.mockRejectedValueOnce(failure({ status: 503 }))
+      expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.incomplete)
+      expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+      expect(t.state().profile?.must_change_password).toBe(false)
+    })
+
+    it('sets another password when the person types another one, and then finishes', async () => {
+      const t = await halfDone()
+      t.fake.changePassword.mockResolvedValue(undefined)
+      expect(await t.state().changePassword('another-one-of-mine')).toBeNull()
+      expect(t.fake.changePassword).toHaveBeenLastCalledWith('another-one-of-mine')
+      expect(t.state().profile?.must_change_password).toBe(false)
+    })
+
+    it('finishes the work only for "the same", and for no other refusal', async () => {
+      const t = await halfDone()
+      t.fake.changePassword.mockRejectedValue(failure({ name: 'AuthWeakPasswordError', code: 'weak_password', status: 422 }))
+      expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.weak_password)
+      t.fake.changePassword.mockRejectedValue(new TypeError('Failed to fetch'))
+      expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.network)
+      expect(t.fake.clearMustChangePassword).toHaveBeenCalledTimes(1)
+      expect(t.state().profile).toEqual(MUST_CHANGE)
+    })
+
+    it('does not take "the same" for done once the person has signed out and in again: that is the old password typed again', async () => {
+      const t = await halfDone()
+      await t.state().signOut()
+      await t.state().signIn('dana@example.com', 'the-temporary-one')
+      expect(t.state().profile).toEqual(MUST_CHANGE)
+      expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.same_password)
+      expect(t.fake.clearMustChangePassword).toHaveBeenCalledTimes(1)
+      expect(t.state().profile).toEqual(MUST_CHANGE)
+    })
+  })
+
+  it('does not take "the same" for done when this app never set a password: the temporary one typed again must not open the app', async () => {
+    const t = await signedInWithTemporaryPassword()
+    t.fake.changePassword.mockRejectedValue(SAME)
+    expect(await t.state().changePassword('the-temporary-one')).toBe(PASSWORD_MESSAGES.same_password)
+    expect(await t.state().changePassword('the-temporary-one')).toBe(PASSWORD_MESSAGES.same_password)
+    expect(t.fake.clearMustChangePassword).not.toHaveBeenCalled()
+    expect(t.state().profile).toEqual(MUST_CHANGE)
+  })
+
+  it('does not take "the same" for done after a failure that was not a yes: the server may or may not have applied it', async () => {
+    const t = await signedInWithTemporaryPassword()
+    t.fake.changePassword.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.network)
+    t.fake.changePassword.mockRejectedValue(SAME)
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.same_password)
+    expect(t.fake.clearMustChangePassword).not.toHaveBeenCalled()
+  })
+
+  it('does not finish anything for a person whose flag is already off: "the same" is just an answer', async () => {
+    const t = await signedInWithTemporaryPassword()
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+    // Later, from the profile page (the flag is off), the server says "the same": there is no step to finish.
+    t.fake.changePassword.mockRejectedValue(SAME)
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.same_password)
+    expect(t.fake.clearMustChangePassword).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not carry a yes from one request for a password to the next: after a reset, the new temporary password typed again is refused', async () => {
+    const t = await signedInWithTemporaryPassword()
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+    expect(t.state().profile?.must_change_password).toBe(false)
+
+    // An administrator resets the password: the profile asks again, in the same session of the app.
+    t.fake.fetchProfile.mockResolvedValue(MUST_CHANGE)
+    await t.state().recheck()
+    expect(t.state().profile?.must_change_password).toBe(true)
+
+    t.fake.changePassword.mockRejectedValue(SAME)
+    expect(await t.state().changePassword('the-new-temporary-one')).toBe(PASSWORD_MESSAGES.same_password)
+    expect(t.fake.clearMustChangePassword).toHaveBeenCalledTimes(1)
+    expect(t.state().profile?.must_change_password).toBe(true)
+  })
+
+  it('does nothing, and says the session is over, when nobody is signed in', async () => {
+    const t = setup()
+    await t.state().init()
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.session)
+    expect(t.fake.changePassword).not.toHaveBeenCalled()
+  })
+
+  it('sends one request for a second call that comes while the first is on its way, and gives both the same answer', async () => {
+    const t = await signedInWithTemporaryPassword()
+    let release: () => void = () => undefined
+    t.fake.changePassword.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const first = t.state().changePassword(NEW_PASSWORD)
+    const second = t.state().changePassword(NEW_PASSWORD)
+    release()
+    expect(await Promise.all([first, second])).toEqual([null, null])
+    expect(t.fake.changePassword).toHaveBeenCalledTimes(1)
+    expect(t.fake.clearMustChangePassword).toHaveBeenCalledTimes(1)
+  })
+
+  it('takes a new call once the last one is over, whether it worked or not', async () => {
+    const t = await signedInWithTemporaryPassword()
+    t.fake.changePassword.mockRejectedValueOnce(failure({ status: 400 }))
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.generic)
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+    expect(t.fake.changePassword).toHaveBeenCalledTimes(2)
+  })
+
+  it('takes a new call after a gateway that throws at once, without a promise', async () => {
+    const t = await signedInWithTemporaryPassword()
+    t.fake.changePassword.mockImplementationOnce(() => {
+      throw failure({ status: 400 })
+    })
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.generic)
+    expect(await t.state().changePassword(NEW_PASSWORD)).toBeNull()
+  })
+
+  it('does not bring back a person who signed out while the password was on its way, and does not send the word about it', async () => {
+    const t = await signedInWithTemporaryPassword()
+    let release: () => void = () => undefined
+    t.fake.changePassword.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const changing = t.state().changePassword(NEW_PASSWORD)
+    await t.state().signOut()
+    release()
+    expect(await changing).toBeNull()
+    expect(t.fake.clearMustChangePassword).not.toHaveBeenCalled()
+    expect(t.state()).toMatchObject({ status: 'signedOut', profile: null })
+  })
+
+  it('does not put the profile of a person back after they signed out while the word about the password was on its way', async () => {
+    const t = await signedInWithTemporaryPassword()
+    let release: () => void = () => undefined
+    t.fake.clearMustChangePassword.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const changing = t.state().changePassword(NEW_PASSWORD)
+    await vi.waitFor(() => expect(t.fake.clearMustChangePassword).toHaveBeenCalled())
+    await t.state().signOut()
+    release()
+    expect(await changing).toBeNull()
+    expect(t.state()).toMatchObject({ status: 'signedOut', profile: null })
+  })
+
+  it('does not turn off the question of another person who signed in while the word about the password was on its way', async () => {
+    const t = await signedInWithTemporaryPassword()
+    let release: () => void = () => undefined
+    t.fake.clearMustChangePassword.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const changing = t.state().changePassword(NEW_PASSWORD)
+    await vi.waitFor(() => expect(t.fake.clearMustChangePassword).toHaveBeenCalled())
+    await t.state().signOut()
+    const other = { ...MUST_CHANGE, id: 'u-other', email: 'other@example.com' }
+    t.fake.fetchProfile.mockResolvedValue(other)
+    await t.state().signIn('other@example.com', 'the-temporary-one')
+    release()
+    await changing
+    expect(t.state().profile).toEqual(other)
+  })
+
+  it('keeps the profile that a re-check brought in the meantime, and only turns the question off', async () => {
+    const t = await signedInWithTemporaryPassword()
+    let release: () => void = () => undefined
+    t.fake.clearMustChangePassword.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const changing = t.state().changePassword(NEW_PASSWORD)
+    await vi.waitFor(() => expect(t.fake.clearMustChangePassword).toHaveBeenCalled())
+    t.fake.fetchProfile.mockResolvedValue({ ...MUST_CHANGE, display_name: 'דנה כהן' })
+    await t.state().recheck()
+    release()
+    await changing
+    expect(t.state().profile).toEqual({ ...DANA, display_name: 'דנה כהן', must_change_password: false })
+  })
+
+  it('keeps no password in its state, whether the change worked or not', async () => {
+    const t = await signedInWithTemporaryPassword()
+    t.fake.changePassword.mockRejectedValueOnce(failure({ status: 400, message: NEW_PASSWORD }))
+    await t.state().changePassword(NEW_PASSWORD)
+    expect(JSON.stringify(t.state())).not.toContain(NEW_PASSWORD)
+    await t.state().changePassword(NEW_PASSWORD)
+    expect(JSON.stringify(t.state())).not.toContain(NEW_PASSWORD)
+  })
+})
+
+describe('saveProfile', () => {
+  const INPUT = { display_name: 'דנה כהן', default_remind_min: 30 }
+
+  it('sends the two fields, and the profile becomes what the server says it now is', async () => {
+    const t = await signedInAsUsual()
+    t.fake.updateMyProfile.mockResolvedValue({ ...DANA, display_name: 'דנה כהן (המוקד)', default_remind_min: 30 })
+    expect(await t.state().saveProfile(INPUT)).toBeNull()
+    expect(t.fake.updateMyProfile).toHaveBeenCalledExactlyOnceWith(INPUT)
+    expect(t.state()).toMatchObject({ status: 'signedIn', profile: { display_name: 'דנה כהן (המוקד)', default_remind_min: 30 } })
+  })
+
+  it.each([
+    ['a name that a colleague has', failure({ code: '23505', status: 409, message: 'duplicate key value violates unique constraint "profiles_display_name_key"' }), PROFILE_MESSAGES.name_taken],
+    ['a refusal of the database', failure({ code: '22023', status: 400 }), PROFILE_MESSAGES.invalid],
+    ['a session that has ended', failure({ code: 'PGRST301', status: 401 }), PROFILE_MESSAGES.session],
+    ['a server that cannot be reached', new TypeError('Failed to fetch'), PROFILE_MESSAGES.network],
+    ['a failure that nobody foresaw', failure({ status: 400 }), PROFILE_MESSAGES.generic],
+  ])('answers with a sentence, and changes nothing, after %s', async (_what, error, sentence) => {
+    const t = await signedInAsUsual()
+    t.fake.updateMyProfile.mockRejectedValue(error)
+    expect(await t.state().saveProfile(INPUT)).toBe(sentence)
+    expect(t.state()).toMatchObject({ status: 'signedIn', profile: DANA })
+    expect(t.fake.signOut).not.toHaveBeenCalled()
+  })
+
+  it('does nothing, and says the session is over, when nobody is signed in', async () => {
+    const t = setup()
+    await t.state().init()
+    expect(await t.state().saveProfile(INPUT)).toBe(PROFILE_MESSAGES.session)
+    expect(t.fake.updateMyProfile).not.toHaveBeenCalled()
+  })
+
+  it('does not bring back a person who signed out while the profile was on its way', async () => {
+    const t = await signedInAsUsual()
+    let release: (profile: Profile) => void = () => undefined
+    t.fake.updateMyProfile.mockReturnValue(new Promise<Profile>((resolve) => (release = resolve)))
+    const saving = t.state().saveProfile(INPUT)
+    await t.state().signOut()
+    release({ ...DANA, ...INPUT })
+    expect(await saving).toBeNull()
+    expect(t.state()).toMatchObject({ status: 'signedOut', profile: null })
+  })
+
+  it('does not bring back the profile of a person whose session the server ended while it was on its way', async () => {
+    const t = await signedInAsUsual()
+    let release: (profile: Profile) => void = () => undefined
+    t.fake.updateMyProfile.mockReturnValue(new Promise<Profile>((resolve) => (release = resolve)))
+    const saving = t.state().saveProfile(INPUT)
+    t.fake.endSessionFromServer()
+    expect(t.state()).toMatchObject({ status: 'signedOut', profile: null })
+    release({ ...DANA, ...INPUT })
+    expect(await saving).toBeNull()
+    expect(t.state()).toMatchObject({ status: 'signedOut', profile: null })
+  })
+
+  it('does not put the profile of one person on another who signed in meanwhile', async () => {
+    const t = await signedInAsUsual()
+    let release: (profile: Profile) => void = () => undefined
+    t.fake.updateMyProfile.mockReturnValue(new Promise<Profile>((resolve) => (release = resolve)))
+    const saving = t.state().saveProfile(INPUT)
+    await t.state().signOut()
+    t.fake.fetchProfile.mockResolvedValue(OWNER)
+    await t.state().signIn('owner@example.com', 'secret-pass')
+    release({ ...DANA, ...INPUT })
+    await saving
+    expect(t.state().profile).toEqual(OWNER)
   })
 })

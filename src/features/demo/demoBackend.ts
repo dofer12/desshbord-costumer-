@@ -2,7 +2,7 @@ import { createMemoryAdminGateway } from '../admin/memoryAdminGateway'
 import type { Profile } from '../auth/types'
 import type { Backend } from '../tasks/backend'
 import type { Status, TaskEvent } from '../tasks/gateways'
-import { createMemoryAttachments, createMemoryDirectory, createMemoryTasks } from '../tasks/memoryGateways'
+import { createMemoryAttachments, createMemoryDirectory, createMemoryTasks, type MemoryDirectory } from '../tasks/memoryGateways'
 import { newTask, type Task } from '../tasks/model'
 import { createMemoryOutboxStorage } from '../tasks/outbox'
 import { fromDueAt, toDueAt } from '../tasks/validation'
@@ -509,8 +509,21 @@ function createDemoEvents(tasks: Task[]): TaskEvent[] {
   return events.map((event, index) => ({ ...event, id: index + 1 }))
 }
 
+/**
+ * The directory of the demo: the statuses, the settings, and the people (the user and three colleagues). The
+ * demo build makes it once and hands it to the gateway of the sign-in and to the backend, so that the
+ * profile of the user is the same person for both.
+ */
+export function createDemoDirectory(): MemoryDirectory {
+  return createMemoryDirectory({
+    statuses: demoStatuses(),
+    profiles: [DEMO_PROFILE, ...demoColleagues()],
+    settings: { glassix_url_template: 'https://example.com/glassix/{id}' },
+  })
+}
+
 /** The backend of the demo build: no server, the people and the tasks above, and everything in memory. */
-export function createDemoBackend(now: () => Date = () => new Date()): Backend {
+export function createDemoBackend(now: () => Date = () => new Date(), directory: MemoryDirectory = createDemoDirectory()): Backend {
   const tasks = createDemoTasks(now())
   const memory = createMemoryTasks({ userId: ME, tasks, events: createDemoEvents(tasks), now, echo: true, live: true })
   const pictures = createMemoryAttachments({
@@ -524,11 +537,6 @@ export function createDemoBackend(now: () => Date = () => new Date()): Backend {
   })
   // The sample pickup comes with the picture of its product. Adding it takes no waiting.
   void pictures.gateway.add('demo-pickup', { full: demoProductPicture(), thumb: demoProductPicture(), kind: 'product', width: 640, height: 480 })
-  const directory = createMemoryDirectory({
-    statuses: demoStatuses(),
-    profiles: [DEMO_PROFILE, ...demoColleagues()],
-    settings: { glassix_url_template: 'https://example.com/glassix/{id}' },
-  })
   return {
     tasks: memory.gateway,
     directory: directory.gateway,

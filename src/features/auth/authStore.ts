@@ -1,7 +1,17 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { normalizeEmail } from './credentials'
-import { AUTH_MESSAGES, classifyProfileFailure, isNetworkError, toHebrewAuthError } from './errors'
-import type { AuthGateway, Profile } from './types'
+import {
+  AUTH_MESSAGES,
+  classifyPasswordFailure,
+  classifyProfileFailure,
+  isNetworkError,
+  PASSWORD_MESSAGES,
+  PROFILE_MESSAGES,
+  toHebrewAuthError,
+  toPasswordMessage,
+  toProfileMessage,
+} from './errors'
+import type { AuthGateway, Profile, ProfileInput } from './types'
 
 export type AuthStatus = 'loading' | 'signedOut' | 'signedIn' | 'unreachable'
 
@@ -34,6 +44,14 @@ export interface AuthActions {
    * is gone, is signed out with an explanation; a server that cannot be reached changes nothing.
    */
   recheck(): Promise<void>
+  /**
+   * Sets a password that the person chose and, when they were asked to choose one, says so to the server,
+   * so that the app opens. Resolves with null when it worked, and otherwise with a sentence for the person,
+   * with nothing changed. A second call while the first is on its way gets the answer of the first.
+   */
+  changePassword(password: string): Promise<string | null>
+  /** Saves the name and the default reminder. Resolves with null when it worked, and otherwise with a sentence for the person. */
+  saveProfile(input: ProfileInput): Promise<string | null>
   /** Stops listening to the backend. */
   dispose(): void
 }
@@ -46,6 +64,14 @@ export function createAuthStore(gateway: AuthGateway): AuthStore {
   let startups = 0
   /** Numbers the sessions, so that the late answer of a re-check cannot touch a later one. */
   let sessions = 0
+  /**
+   * The session in which the server said yes to a new password while the profile still asks for one. If the
+   * word about it did not get through, the second try with the same text is answered "the same", and
+   * only after a yes of ours does that mean that the work is half done and can go on.
+   */
+  let passwordSetIn = -1
+  /** The change of a password that is on its way, if any. */
+  let changing: Promise<string | null> | null = null
 
   return createStore<AuthState & AuthActions>()((set, get) => {
     /** Drops the local session first, so a late "signed out" event is recognised as our own. */
@@ -92,6 +118,34 @@ export function createAuthStore(gateway: AuthGateway): AuthStore {
             return false
         }
       }
+    }
+
+    async function setPassword(password: string): Promise<string | null> {
+      const { status, profile } = get()
+      if (status !== 'signedIn' || !profile) return PASSWORD_MESSAGES.session
+      const session = sessions
+      const asked = profile.must_change_password
+      try {
+        await gateway.changePassword(password)
+        if (asked) passwordSetIn = session
+      } catch (err) {
+        // The server answers "the same" to a password that it already has. After a yes of ours that is the
+        // second try with the same text; with none it is the temporary password typed again, and is refused.
+        const finishing = asked && passwordSetIn === session && classifyPasswordFailure(err) === 'same_password'
+        if (!finishing) return toPasswordMessage(err)
+      }
+      // A person who signed out meanwhile has no session to say it in; they will be asked again at the next sign-in.
+      if (!asked || session !== sessions) return null
+      try {
+        await gateway.clearMustChangePassword()
+      } catch {
+        return PASSWORD_MESSAGES.incomplete
+      }
+      if (session !== sessions) return null
+      passwordSetIn = -1
+      const current = get().profile
+      if (current) set({ profile: { ...current, must_change_password: false } })
+      return null
     }
 
     return {
@@ -177,6 +231,27 @@ export function createAuthStore(gateway: AuthGateway): AuthStore {
             default:
               break
           }
+        }
+      },
+
+      changePassword(password) {
+        if (changing) return changing
+        const run: Promise<string | null> = setPassword(password).finally(() => {
+          if (changing === run) changing = null
+        })
+        changing = run
+        return run
+      },
+
+      async saveProfile(input) {
+        if (get().status !== 'signedIn') return PROFILE_MESSAGES.session
+        const session = sessions
+        try {
+          const profile = await gateway.updateMyProfile(input)
+          if (session === sessions && get().status === 'signedIn') set({ profile })
+          return null
+        } catch (err) {
+          return toProfileMessage(err)
         }
       },
 

@@ -3,7 +3,7 @@ import { activeReminders, planNotifications } from '../schedule/reminders'
 import type { TaskChangeEvent } from '../tasks/gateways'
 import type { Task } from '../tasks/model'
 import { fromDueAt, glassixUrl, validateTask } from '../tasks/validation'
-import { createDemoBackend, createDemoTasks, demoColleagues, demoStatuses } from './demoBackend'
+import { createDemoBackend, createDemoDirectory, createDemoTasks, demoColleagues, demoStatuses } from './demoBackend'
 import { DEMO_PROFILE } from './demoGateway'
 
 // 15 October 2026, 15:00 in Jerusalem: a Thursday afternoon.
@@ -169,6 +169,24 @@ describe('the demo backend', () => {
     expect(statuses).toHaveLength(17)
     expect(glassixUrl(settings.glassix_url_template, 'demo-4801')).toMatch(/^https:\/\//)
     expect(settings.ship_methods).toContain('CARGO')
+  })
+
+  it('works on the directory that it is given, so that the person who signs in and the people of the team are one', async () => {
+    const directory = createDemoDirectory()
+    expect(directory.profiles.map((p) => p.id)).toEqual([DEMO_PROFILE.id, ...demoColleagues().map((p) => p.id)])
+    const backend = createDemoBackend(() => NOW, directory)
+    directory.profiles.find((p) => p.id === DEMO_PROFILE.id)!.display_name = 'שם אחר'
+    const { profiles } = await backend.directory.load()
+    expect(profiles.find((p) => p.id === DEMO_PROFILE.id)?.display_name).toBe('שם אחר')
+    // And a change that the administrator tools make is made on that directory.
+    await backend.admin.users.rename(DEMO_PROFILE.id, 'שם שלישי')
+    expect(directory.profiles.find((p) => p.id === DEMO_PROFILE.id)?.display_name).toBe('שם שלישי')
+  })
+
+  it('makes a directory of its own when it is not given one', async () => {
+    const first = await createDemoBackend(() => NOW).directory.load()
+    const second = await createDemoBackend(() => NOW).directory.load()
+    expect(first.profiles).toEqual(second.profiles)
   })
 
   it('has a "created" line of history for every sample task, and one for each that is done', async () => {

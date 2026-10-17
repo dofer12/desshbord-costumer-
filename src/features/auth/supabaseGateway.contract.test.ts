@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createAuthStore, SLOW_START_MS } from './authStore'
-import { AUTH_MESSAGES } from './errors'
+import { AUTH_MESSAGES, PASSWORD_MESSAGES, PROFILE_MESSAGES } from './errors'
 import { createSupabaseGateway } from './supabaseGateway'
 
 // supabaseGateway.test.ts uses hand-made fakes of supabase-js, which can only confirm what the
@@ -50,6 +50,8 @@ const offline = (): never => {
 interface Sent {
   method: string
   url: URL
+  /** What was sent, when it was text (the requests of the auth service and the database API are JSON). */
+  body: string
 }
 
 /** The real client and store, wired to a network that answers however the test says. */
@@ -65,7 +67,7 @@ function harness(respond: (sent: Sent) => Response, options: { withSession?: boo
   const client = createClient(PROJECT, 'sb_publishable_test', {
     global: {
       fetch: async (input, init) => {
-        const request = { method: init?.method ?? 'GET', url: new URL(String(input)) }
+        const request = { method: init?.method ?? 'GET', url: new URL(String(input)), body: typeof init?.body === 'string' ? init.body : '' }
         sent.push(request)
         return respond(request)
       },
@@ -179,6 +181,187 @@ describe('start-up offline with an expired token', () => {
     expect(h.store.getState().status).toBe('unreachable')
     expect(h.count(LOGOUT)).toBe(0)
     expect(h.hasStoredSession()).toBe(true)
+  })
+})
+
+// Choosing a password is two requests: the auth service sets it, and a function of the database says that the
+// person has chosen one. These run the real client against the answers that the services really give.
+
+const AUTH_USER = '/auth/v1/user'
+const CLEAR = '/rest/v1/rpc/clear_must_change_password'
+const UPDATE_PROFILE = '/rest/v1/rpc/update_my_profile'
+const NEW_PASSWORD = 'a-password-of-my-own'
+const ASKED_TO_CHOOSE = {
+  id: USER.id,
+  email: USER.email,
+  display_name: 'דנה',
+  role: 'employee',
+  is_active: true,
+  must_change_password: true,
+  default_remind_min: 15,
+}
+
+/** The services as they are when all is well, except for the paths that the test names. */
+function world(answers: Record<string, () => Response>, profile: object = ASKED_TO_CHOOSE) {
+  return (sent: Sent): Response => {
+    const answer = answers[sent.url.pathname]
+    if (answer) return answer()
+    if (sent.url.pathname === PROFILES) return json(200, profile)
+    if (sent.url.pathname === AUTH_USER) return json(200, USER)
+    return noContent()
+  }
+}
+
+describe('choosing a password', () => {
+  it('sends the new password to the auth service as an update of the user, and nothing of the person with it', async () => {
+    const h = harness(world({}))
+    await h.gateway.changePassword(NEW_PASSWORD)
+    const update = h.sent.find((request) => request.url.pathname === AUTH_USER)
+    expect(update?.method).toBe('PUT')
+    // The two nulls are the library's own (the fields of PKCE); the e-mail and the id of the person are not sent.
+    expect(JSON.parse(update?.body ?? '')).toEqual({ password: NEW_PASSWORD, code_challenge: null, code_challenge_method: null })
+  })
+
+  it('sets the password, then says it with the function of the database, and the app opens', async () => {
+    const h = harness(world({}))
+    await h.store.getState().init()
+    expect(h.store.getState().profile?.must_change_password).toBe(true)
+
+    expect(await h.store.getState().changePassword(NEW_PASSWORD)).toBeNull()
+
+    const steps = h.sent.filter((request) => request.url.pathname === AUTH_USER || request.url.pathname === CLEAR)
+    expect(steps.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([`PUT ${AUTH_USER}`, `POST ${CLEAR}`])
+    expect(h.store.getState()).toMatchObject({ status: 'signedIn', profile: { ...ASKED_TO_CHOOSE, must_change_password: false } })
+  })
+
+  it('does not say it again for a person who was not asked, and sends no more than the password', async () => {
+    const h = harness(world({}, { ...ASKED_TO_CHOOSE, must_change_password: false }))
+    await h.store.getState().init()
+    expect(await h.store.getState().changePassword(NEW_PASSWORD)).toBeNull()
+    expect(h.count(CLEAR)).toBe(0)
+    expect(h.count(AUTH_USER)).toBe(1)
+  })
+
+  it.each([
+    [
+      'the password that the person already has',
+      () => json(422, { code: 422, error_code: 'same_password', msg: 'New password should be different from the old password.' }),
+      PASSWORD_MESSAGES.same_password,
+    ],
+    [
+      'a password that is too short',
+      () => json(422, { code: 422, error_code: 'weak_password', msg: 'Password should be at least 10 characters.', weak_password: { reasons: ['length'] } }),
+      PASSWORD_MESSAGES.weak_password,
+    ],
+    [
+      'a password that is too long',
+      () => json(400, { code: 400, error_code: 'validation_failed', msg: 'Password cannot be longer than 72 characters' }),
+      PASSWORD_MESSAGES.generic,
+    ],
+    ['a token that the server rejects', () => json(401, { code: 401, error_code: 'bad_jwt', msg: 'invalid JWT: unable to parse or verify signature' }), PASSWORD_MESSAGES.session],
+    [
+      'a session that the server no longer has',
+      () => json(403, { code: 403, error_code: 'session_not_found', msg: 'Session from session_id claim in JWT does not exist' }),
+      PASSWORD_MESSAGES.session,
+    ],
+    ['a server in trouble', () => json(500, { code: 500, error_code: 'unexpected_failure', msg: 'boom' }), PASSWORD_MESSAGES.network],
+    ['a proxy that answers with a page', () => new Response('<html>Bad gateway</html>', { status: 502 }), PASSWORD_MESSAGES.network],
+    ['no connection at all', offline, PASSWORD_MESSAGES.network],
+  ])('tells the person, in a sentence of ours, about %s', async (_what, answer, sentence) => {
+    const h = harness(world({ [AUTH_USER]: answer }))
+    await h.store.getState().init()
+    expect(await h.store.getState().changePassword(NEW_PASSWORD)).toBe(sentence)
+    // Nothing was said to the database, and the person is where they were.
+    expect(h.count(CLEAR)).toBe(0)
+    expect(h.store.getState()).toMatchObject({ status: 'signedIn', profile: ASKED_TO_CHOOSE })
+  })
+
+  it('tells the person that there is no session, when the stored one is gone', async () => {
+    const h = harness(world({}), { withSession: false })
+    await expect(h.gateway.changePassword(NEW_PASSWORD)).rejects.toMatchObject({ name: 'AuthSessionMissingError' })
+    expect(h.count(AUTH_USER)).toBe(0)
+  })
+
+  it('tells the person to try again when the word about it does not get through, and the second try finishes the work', async () => {
+    let words = 0
+    let sets = 0
+    const h = harness(
+      world({
+        [CLEAR]: () => (++words === 1 ? json(503, { message: 'server in trouble' }) : noContent()),
+        // The first time the password is new. The second time it is the one that the server has, and it says so.
+        [AUTH_USER]: () =>
+          ++sets === 1 ? json(200, USER) : json(422, { code: 422, error_code: 'same_password', msg: 'New password should be different from the old password.' }),
+      }),
+    )
+    await h.store.getState().init()
+
+    expect(await h.store.getState().changePassword(NEW_PASSWORD)).toBe(PASSWORD_MESSAGES.incomplete)
+    expect(h.store.getState().profile?.must_change_password).toBe(true)
+
+    expect(await h.store.getState().changePassword(NEW_PASSWORD)).toBeNull()
+    expect(h.store.getState().profile?.must_change_password).toBe(false)
+    expect(h.count(CLEAR)).toBe(2)
+  })
+
+  it('does not open the app for the temporary password typed again', async () => {
+    const h = harness(
+      world({ [AUTH_USER]: () => json(422, { code: 422, error_code: 'same_password', msg: 'New password should be different from the old password.' }) }),
+    )
+    await h.store.getState().init()
+    expect(await h.store.getState().changePassword('the-temporary-one')).toBe(PASSWORD_MESSAGES.same_password)
+    expect(h.count(CLEAR)).toBe(0)
+    expect(h.store.getState().profile?.must_change_password).toBe(true)
+  })
+})
+
+describe('saving the profile', () => {
+  const INPUT = { display_name: 'דנה כהן', default_remind_min: 30 }
+  const SAVED = { ...ASKED_TO_CHOOSE, must_change_password: false, ...INPUT }
+
+  it('calls the function with the parameters it names, reads the row, and the store shows what is there', async () => {
+    const h = harness(world({}, SAVED))
+    await h.store.getState().init()
+    expect(await h.store.getState().saveProfile(INPUT)).toBeNull()
+
+    const call = h.sent.find((request) => request.url.pathname === UPDATE_PROFILE)
+    expect(call?.method).toBe('POST')
+    expect(JSON.parse(call?.body ?? '')).toEqual({ p_display_name: 'דנה כהן', p_default_remind_min: 30 })
+    expect(h.sent.filter((request) => request.url.pathname === PROFILES).at(-1)?.url.searchParams.get('id')).toBe(`eq.${USER.id}`)
+    expect(h.store.getState().profile).toEqual(SAVED)
+  })
+
+  it('says that the name is taken for the answer that the database really gives, and changes nothing', async () => {
+    const h = harness(
+      world({
+        [UPDATE_PROFILE]: () =>
+          json(409, {
+            code: '23505',
+            details: 'Key (lower(display_name::text))=(דנה כהן) already exists.',
+            hint: null,
+            message: 'duplicate key value violates unique constraint "profiles_display_name_key"',
+          }),
+      }),
+    )
+    await h.store.getState().init()
+    expect(await h.store.getState().saveProfile(INPUT)).toBe(PROFILE_MESSAGES.name_taken)
+    expect(h.store.getState().profile).toEqual(ASKED_TO_CHOOSE)
+  })
+
+  it.each([
+    ['a token that expired', () => json(401, { code: 'PGRST301', details: null, hint: null, message: 'JWT expired' }), PROFILE_MESSAGES.session],
+    [
+      'a person who is no longer a member',
+      () => json(403, { code: '42501', details: null, hint: null, message: 'only an active member can change their profile' }),
+      PROFILE_MESSAGES.session,
+    ],
+    ['a value that the database refuses', () => json(400, { code: '22023', details: null, hint: null, message: 'the display name cannot be empty' }), PROFILE_MESSAGES.invalid],
+    ['a server in trouble', () => json(500, { code: 'XX000', details: null, hint: null, message: 'boom' }), PROFILE_MESSAGES.network],
+    ['no connection at all', offline, PROFILE_MESSAGES.network],
+  ])('tells the person about %s', async (_what, answer, sentence) => {
+    const h = harness(world({ [UPDATE_PROFILE]: answer }))
+    await h.store.getState().init()
+    expect(await h.store.getState().saveProfile(INPUT)).toBe(sentence)
+    expect(h.store.getState().profile).toEqual(ASKED_TO_CHOOSE)
   })
 })
 
