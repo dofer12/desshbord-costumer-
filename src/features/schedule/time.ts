@@ -79,3 +79,23 @@ export function formatSpan(minutes: number): string {
   const days = Math.floor(total / 1440)
   return days === 1 ? 'יום' : `${days} ימים`
 }
+
+export interface Relative {
+  state: 'ahead' | 'now' | 'late'
+  /** The length of time in words, as formatSpan writes it. Empty for "now". */
+  span: string
+}
+
+const MINUTE_MS = 60_000
+
+/**
+ * How far a moment is from now, for "in 45 min" and "2 hours late". A moment that is ahead is counted
+ * up to the next whole minute, so that it never says "in 0 min" before it has come; one that has
+ * passed is counted down to the whole minute, and the first minute after it is "now".
+ */
+export function relativeTo(at: Moment, now: Moment): Relative {
+  const apart = new Date(at).getTime() - new Date(now).getTime()
+  if (apart > 0) return { state: 'ahead', span: formatSpan(Math.ceil(apart / MINUTE_MS)) }
+  const late = Math.floor(-apart / MINUTE_MS)
+  return late === 0 ? { state: 'now', span: '' } : { state: 'late', span: formatSpan(late) }
+}

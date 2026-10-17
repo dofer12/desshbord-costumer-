@@ -7,6 +7,7 @@ import {
   formatClock,
   formatSpan,
   minuteOfDay,
+  relativeTo,
   startOfWeek,
   weekday,
   WEEKDAY_LONG,
@@ -190,5 +191,46 @@ describe('formatSpan', () => {
     [-120, '2 שע׳'],
   ])('%s minutes is "%s"', (minutes, text) => {
     expect(formatSpan(minutes)).toBe(text)
+  })
+})
+
+describe('relativeTo', () => {
+  const NOW = new Date('2026-10-16T09:00:00Z')
+  const from = (seconds: number) => relativeTo(new Date(NOW.getTime() + seconds * 1000), NOW)
+
+  // A moment ahead is counted up to the next whole minute, so that it never says "in 0 minutes" before
+  // it has come; a moment that has passed is counted down to the whole minute, and the first minute
+  // after it is "now".
+  it('says how long it is to a moment that is ahead, rounded up to the minute', () => {
+    expect(from(45 * 60)).toEqual({ state: 'ahead', span: '45 דק׳' })
+    expect(from(44 * 60 + 30)).toEqual({ state: 'ahead', span: '45 דק׳' })
+    expect(from(61)).toEqual({ state: 'ahead', span: '2 דק׳' })
+    expect(from(60)).toEqual({ state: 'ahead', span: '1 דק׳' })
+    expect(from(1)).toEqual({ state: 'ahead', span: '1 דק׳' })
+  })
+
+  it('says "now" from the moment itself until a whole minute after it', () => {
+    expect(from(0)).toEqual({ state: 'now', span: '' })
+    expect(from(-1)).toEqual({ state: 'now', span: '' })
+    expect(from(-59)).toEqual({ state: 'now', span: '' })
+  })
+
+  it('says how late it is once a whole minute has passed, rounded down', () => {
+    expect(from(-60)).toEqual({ state: 'late', span: '1 דק׳' })
+    expect(from(-119)).toEqual({ state: 'late', span: '1 דק׳' })
+    expect(from(-120)).toEqual({ state: 'late', span: '2 דק׳' })
+    expect(from(-2 * 3600)).toEqual({ state: 'late', span: '2 שע׳' })
+  })
+
+  it('uses hours and days for the longer spans', () => {
+    expect(from(90 * 60)).toEqual({ state: 'ahead', span: 'שעה ו-30 דק׳' })
+    expect(from(-3 * 24 * 3600)).toEqual({ state: 'late', span: '3 ימים' })
+  })
+
+  it('takes a date, a number or an ISO string for either moment', () => {
+    const due = '2026-10-16T09:10:00.000Z'
+    expect(relativeTo(due, NOW)).toEqual({ state: 'ahead', span: '10 דק׳' })
+    expect(relativeTo(Date.parse(due), NOW.getTime())).toEqual({ state: 'ahead', span: '10 דק׳' })
+    expect(relativeTo(new Date(due), NOW.toISOString())).toEqual({ state: 'ahead', span: '10 דק׳' })
   })
 })

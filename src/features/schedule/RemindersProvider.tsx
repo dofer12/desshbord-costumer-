@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useStore } from 'zustand'
+import { deviceStorage } from '../../lib/deviceStorage'
 import { useNow } from '../../lib/useNow'
 import { useAuth } from '../auth/authContext'
 import { useTasks } from '../tasks/tasksContext'
@@ -15,14 +16,6 @@ const REPLAN_DEBOUNCE_MS = 250
 const REPLAN_EVERY_MS = 15 * 60_000
 /** How often "now" is looked at, which is how soon a reminder appears when its time comes. */
 const CLOCK_TICK_MS = 15_000
-
-function deviceStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
-  try {
-    return globalThis.localStorage ?? null
-  } catch {
-    return null
-  }
-}
 
 /**
  * Keeps the reminders of the signed-in person: the strip of those that are on, the snoozes, and the

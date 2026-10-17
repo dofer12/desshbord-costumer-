@@ -30,3 +30,12 @@ export function useReminders(): RemindersValue {
   if (!value) throw new Error('useReminders must be used inside <RemindersProvider>')
   return value
 }
+
+/** What the Today screen says about the notifications of the device. */
+export const NOTIFICATION_MESSAGES = {
+  prompt: 'כדי לקבל תזכורת גם כשהאפליקציה סגורה, צריך לאשר התראות.',
+  denied:
+    'ההתראות חסומות במכשיר הזה, ולכן לא תגיע תזכורת כשהאפליקציה סגורה. כדי לקבל אותן, אפשרו התראות לאפליקציה בהגדרות המכשיר (בדפדפן: בהגדרות האתר). התזכורות ממשיכות להופיע בראש המסך כשהאפליקציה פתוחה.',
+  unsupported: 'המכשיר הזה לא תומך בהתראות. התזכורות מופיעות בראש המסך כשהאפליקציה פתוחה.',
+  approximate: 'התזכורות עלולות להגיע באיחור של כמה דקות, כי לאפליקציה אין הרשאה לתזמן התראות בדיוק.',
+} as const

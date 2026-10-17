@@ -223,6 +223,37 @@ describe('the numbers on the tabs as time passes', () => {
   })
 })
 
+describe('the strip of reminders', () => {
+  // A reminder that is on at noon: the task is due in ten minutes and reminds a quarter of an hour before.
+  const reminding = (id: string, patch: Partial<Task> = {}): Task => ({
+    ...newTask(DANA.id, id),
+    title: id,
+    assignee_id: DANA.id,
+    due_at: '2026-10-16T09:10:00.000Z',
+    remind_min: 15,
+    ...patch,
+  })
+  const strip = () => screen.queryByRole('region', { name: 'תזכורות פעילות' })
+
+  it.each(['/today', '/tasks', '/calendar'])('is above the page at %s', async (path) => {
+    await renderShell({ path, tasks: [reminding('a')], now: NOON })
+    expect(within(strip() as HTMLElement).getByRole('link', { name: 'a' })).toHaveAttribute('href', '/today/a')
+    const main = screen.getByRole('main')
+    expect(strip()?.compareDocumentPosition(main)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('shows the reminders of the person who is signed in, and not of another', async () => {
+    await renderShell({ path: '/tasks', tasks: [reminding('mine'), reminding('theirs', { assignee_id: OWNER.id })], now: NOON })
+    const links = within(strip() as HTMLElement).getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual(['mine'])
+  })
+
+  it('is not there when nothing reminds', async () => {
+    await renderShell({ path: '/tasks', tasks: [reminding('later', { due_at: '2026-10-16T15:00:00.000Z' })], now: NOON })
+    expect(strip()).not.toBeInTheDocument()
+  })
+})
+
 describe('the title', () => {
   it('names the app', async () => {
     await renderShell()
@@ -238,12 +269,13 @@ describe('the indicator of waiting changes', () => {
 
   it('shows how many changes wait, and goes away when none does', async () => {
     const { tasks } = await renderShell()
+    // (The strip of reminders keeps a status region of its own, which is empty, so the message is found by what it says.)
     act(() => tasks.setState({ pending: 3 }))
-    expect(screen.getByRole('status')).toHaveTextContent('3 שינויים ממתינים')
+    expect(screen.getByText('3 שינויים ממתינים')).toHaveAttribute('role', 'status')
     act(() => tasks.setState({ pending: 1 }))
-    expect(screen.getByRole('status')).toHaveTextContent('שינוי אחד ממתין')
+    expect(screen.getByText('שינוי אחד ממתין')).toHaveAttribute('role', 'status')
     act(() => tasks.setState({ pending: 0 }))
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText(/שינויים ממתינים|שינוי אחד ממתין/)).not.toBeInTheDocument()
   })
 
   it('says when changes were refused, and offers to send them again', async () => {

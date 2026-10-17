@@ -29,11 +29,14 @@ export function DoneBox({ task, onToggle }: { task: Task; onToggle: TaskListProp
   )
 }
 
-/** The title, as a link to the card of the task, with a mark for what is urgent and for a delivery or a pickup. */
-export function TitleLink({ task }: { task: Task }) {
+/**
+ * The title, as a link to the card of the task, with a mark for what is urgent and for a delivery or a
+ * pickup. The card opens over the page that `base` names: the list, Today or the calendar.
+ */
+export function TitleLink({ task, base = '/tasks' }: { task: Task; base?: string }) {
   return (
     <span className="title-cell">
-      <Link to={`/tasks/${task.id}`} className={task.done_at !== null ? 'title-link is-done' : 'title-link'}>
+      <Link to={`${base}/${task.id}`} className={task.done_at !== null ? 'title-link is-done' : 'title-link'}>
         {taskTitle(task)}
       </Link>
       {task.priority !== 'normal' && <span className={`badge priority-${task.priority}`}>{PRIORITY_LABEL[task.priority]}</span>}

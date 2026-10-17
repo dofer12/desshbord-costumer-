@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { useNow } from '../../lib/useNow'
 import { useAuth } from '../auth/authContext'
+import { ReminderStrip } from '../schedule/ReminderStrip'
+import { RemindersProvider } from '../schedule/RemindersProvider'
 import { todayBadge } from '../schedule/today'
 import { MY_OPEN_TASKS, filterTasks } from '../tasks/selectors'
 import { useTasks } from '../tasks/tasksContext'
@@ -182,23 +184,29 @@ function UserMenu({ serverHost }: { serverHost: string }) {
   )
 }
 
-/** The frame of the app once somebody is signed in: the tabs, the state of the sync, the user menu. */
+/**
+ * The frame of the app once somebody is signed in: the tabs, the state of the sync, the user menu, and
+ * the reminders of the person, which are kept for as long as the frame is there and shown above every page.
+ */
 export function AppShell({ serverHost }: { serverHost: string }) {
   useMembershipCheck()
   return (
-    <div className="app">
-      <header className="app-bar">
-        <h1 className="display app-title">יומן משימות מוקד</h1>
-        <Tabs />
-        <div className="app-bar-end">
-          <SyncStatus />
-          <UserMenu serverHost={serverHost} />
-        </div>
-      </header>
-      <ConnectionBanner />
-      <main className="app-main">
-        <Outlet />
-      </main>
-    </div>
+    <RemindersProvider>
+      <div className="app">
+        <header className="app-bar">
+          <h1 className="display app-title">יומן משימות מוקד</h1>
+          <Tabs />
+          <div className="app-bar-end">
+            <SyncStatus />
+            <UserMenu serverHost={serverHost} />
+          </div>
+        </header>
+        <ConnectionBanner />
+        <ReminderStrip />
+        <main className="app-main">
+          <Outlet />
+        </main>
+      </div>
+    </RemindersProvider>
   )
 }
