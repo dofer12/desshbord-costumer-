@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useStore } from 'zustand'
 import { deviceStorage } from '../../lib/deviceStorage'
@@ -6,7 +6,7 @@ import { useNow } from '../../lib/useNow'
 import { useAuth } from '../auth/authContext'
 import { useTasks } from '../tasks/tasksContext'
 import { chooseNotifier, type Notifier, type Permission } from './notifier'
-import { RemindersContext, REMINDER_PROBLEM, type RemindersValue } from './remindersContext'
+import { NotifierContext, RemindersContext, REMINDER_PROBLEM, type RemindersValue } from './remindersContext'
 import { activeReminders, isReminderTask, planNotifications } from './reminders'
 import { createSnoozeStore } from './snooze'
 
@@ -28,7 +28,8 @@ export function RemindersProvider({ notifier: given, children }: { notifier?: No
   const meId = useAuth((state) => state.profile?.id ?? '')
   const byId = useTasks((state) => state.tasks)
   const loaded = useTasks((state) => state.status === 'ready')
-  const notifier = useMemo(() => given ?? chooseNotifier(), [given])
+  const provided = useContext(NotifierContext)
+  const notifier = useMemo(() => given ?? provided ?? chooseNotifier(), [given, provided])
   const snoozeStore = useMemo(() => createSnoozeStore({ storage: deviceStorage(), userId: meId }), [meId])
   const snoozed = useStore(snoozeStore, (state) => state.snoozed)
   const now = useNow(CLOCK_TICK_MS)

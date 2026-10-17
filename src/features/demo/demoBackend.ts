@@ -191,6 +191,7 @@ export function createDemoTasks(at: Date): Task[] {
       customer_phone: '050-0000006',
       assignee_id: ME,
       due_at: from(4 * HOUR),
+      remind_min: 20,
       notes: 'הלקוחה צירפה תמונה של המוצר.',
       glassix_conversation_id: 'demo-4806',
     }),
@@ -256,6 +257,7 @@ export function createDemoTasks(at: Date): Task[] {
     sample('demo-stock', {
       title: 'לבדוק מלאי מוצר',
       service_call_number: 'SC-5530',
+      assignee_id: ME,
       no_glassix: true,
     }),
     sample('demo-done-today', {
@@ -480,6 +482,16 @@ export function createDemoTasks(at: Date): Task[] {
       assignee_id: MICHAL,
       due_at: from(90 * MINUTE),
       glassix_conversation_id: 'demo-4828',
+    }),
+    sample('demo-callback-tomorrow', {
+      title: 'לחזור ללקוחה לגבי החלפת מוצר',
+      order_number: '900129',
+      customer_name: 'לקוחה לדוגמה כט׳',
+      customer_phone: '050-0000029',
+      assignee_id: ME,
+      due_at: onDay(at, 1, '11:30'),
+      remind_min: 30,
+      glassix_conversation_id: 'demo-4829',
     }),
   ]
 }

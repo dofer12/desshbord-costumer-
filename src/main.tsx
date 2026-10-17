@@ -9,6 +9,8 @@ import { ConfigErrorScreen } from './features/config/ConfigErrorScreen'
 import { DemoBanner } from './features/demo/DemoBanner'
 import { createDemoBackend } from './features/demo/demoBackend'
 import { createDemoGateway } from './features/demo/demoGateway'
+import { createMemoryNotifier, type Notifier } from './features/schedule/notifier'
+import { NotifierContext } from './features/schedule/remindersContext'
 import { BackendContext, type Backend } from './features/tasks/backend'
 import { createSupabaseBackend } from './features/tasks/supabaseBackend'
 import { ConfigError, loadConfig } from './lib/config'
@@ -19,16 +21,18 @@ import './styles/base.css'
 
 const root = createRoot(document.getElementById('root')!)
 
-function mount(store: AuthStore, backend: Backend, serverHost: string, demo = false) {
+function mount(store: AuthStore, backend: Backend, serverHost: string, demo?: { notifier: Notifier }) {
   void store.getState().init()
   root.render(
     <StrictMode>
       <AuthProvider store={store}>
         <BackendContext value={backend}>
-          <HashRouter>
-            {demo && <DemoBanner />}
-            <App serverHost={serverHost} />
-          </HashRouter>
+          <NotifierContext value={demo?.notifier ?? null}>
+            <HashRouter>
+              {demo && <DemoBanner />}
+              <App serverHost={serverHost} />
+            </HashRouter>
+          </NotifierContext>
         </BackendContext>
       </AuthProvider>
     </StrictMode>,
@@ -40,7 +44,8 @@ if (import.meta.env.MODE === 'demo') {
   // other mode folds this test away, so the demo gateway and its sample data never reach a release:
   // demoBuild.test.ts.
   document.documentElement.classList.add('demo-mode')
-  mount(createAuthStore(createDemoGateway()), createDemoBackend(), 'הדגמה', true)
+  // The demo has no permission to ask for and nothing to show on a phone: its reminders are the ones on the screen.
+  mount(createAuthStore(createDemoGateway()), createDemoBackend(), 'הדגמה', { notifier: createMemoryNotifier('granted') })
 } else {
   try {
     const config = loadConfig(import.meta.env)

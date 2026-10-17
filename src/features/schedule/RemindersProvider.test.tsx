@@ -11,7 +11,7 @@ import { newTask, type Task } from '../tasks/model'
 import { useTasks } from '../tasks/tasksContext'
 import { TasksProvider } from '../tasks/TasksProvider'
 import { createMemoryNotifier, createWebNotifier, type MemoryNotifier } from './notifier'
-import { REMINDER_PROBLEM, useReminders } from './remindersContext'
+import { NotifierContext, REMINDER_PROBLEM, useReminders } from './remindersContext'
 import { RemindersProvider } from './RemindersProvider'
 import { snoozeKey } from './snooze'
 
@@ -405,5 +405,45 @@ describe('RemindersProvider: the notifier', () => {
     expect(text('permission')).toBe('unsupported')
     expect(text('exact')).toBe('unsupported')
     expect(text('problem')).toBe('')
+  })
+})
+
+describe('RemindersProvider: the notifier it uses', () => {
+  /** Mounts the provider with the notifier of the page (the demo's) and, perhaps, one of its own. */
+  async function mountWithPage(page: MemoryNotifier, own?: MemoryNotifier) {
+    const auth = await signedIn()
+    const fake: FakeBackend = createFakeBackend({ tasks: [task('t1')] })
+    render(
+      <AuthProvider store={auth}>
+        <BackendContext value={fake.backend}>
+          <NotifierContext value={page}>
+            <MemoryRouter>
+              <TasksProvider>
+                <RemindersProvider notifier={own}>
+                  <Probe />
+                </RemindersProvider>
+              </TasksProvider>
+            </MemoryRouter>
+          </NotifierContext>
+        </BackendContext>
+      </AuthProvider>,
+    )
+    await settle()
+  }
+
+  it('uses the notifier that the page provides when it is not given one', async () => {
+    const page = createMemoryNotifier('granted')
+    await mountWithPage(page)
+    expect(lastPlan(page).map((p) => p.taskId)).toEqual(['t1'])
+    expect(text('permission')).toBe('granted')
+  })
+
+  it('prefers the notifier it is given to the one that the page provides', async () => {
+    const page = createMemoryNotifier('granted')
+    const own = createMemoryNotifier('denied')
+    await mountWithPage(page, own)
+    expect(lastPlan(own).map((p) => p.taskId)).toEqual(['t1'])
+    expect(page.plans).toEqual([])
+    expect(text('permission')).toBe('denied')
   })
 })

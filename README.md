@@ -16,12 +16,14 @@ A Hebrew, right-to-left task journal for a service desk. One codebase, three tar
 | `node supabase/tests/security-check.ts` | Live check of the permissions of the real Supabase project: makes temporary users, tries every cell of the table of permissions as each of them, and deletes them. Asks for the secret key (not shown, never saved). See `docs/setup-he.md`, step 6. |
 | `npm run build` | Production web build into `dist/`. |
 | `npm run electron:dev` | Build, then open the Windows app. |
-| `npm run electron:smoke` | Open the Windows app without showing it and check that the first screen renders. |
+| `npm run electron:smoke` | Open the Windows app without showing it and check that the first screen renders, that the preload gave the page its one function and that the icon of the tray is found. |
 | `npm run demo` | Demo in the browser at http://127.0.0.1:5174: no server, no user, opens signed in as a demo admin. |
 | `npm run electron:demo` | The same demo as a Windows app window (builds into `dist-demo/`). |
 | `npm run dist:win` | Build the Windows installer into `release/`. |
 | `npm run android:sync` | Build the web app and copy it into the Android project. |
 
 The APK is built in GitHub Actions (`.github/workflows/release.yml`), not on this computer.
+
+Reminders: the web app plans local notifications for the next two days (`src/features/schedule/`) and hands them to the notifier of the platform: the Notification API with timers in a browser and in the Windows app, Capacitor's local notifications on Android. Closing the window of the Windows app hides it and leaves the app in the tray, so that the reminders keep arriving; it is left from the menu of the tray icon (`electron/trayBehavior.ts`). The icon of the tray, `build/tray.png`, is a placeholder until the icon of M4.
 
 The demo exists only in builds made with `--mode demo`. Releases are built in the default `production` mode, and `src/features/demo/demoBuild.test.ts` fails if the demo ever ends up in one.

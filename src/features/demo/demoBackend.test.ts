@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { activeReminders, planNotifications } from '../schedule/reminders'
 import type { TaskChangeEvent } from '../tasks/gateways'
+import type { Task } from '../tasks/model'
 import { fromDueAt, glassixUrl, validateTask } from '../tasks/validation'
 import { createDemoBackend, createDemoTasks, demoColleagues, demoStatuses } from './demoBackend'
 import { DEMO_PROFILE } from './demoGateway'
@@ -85,6 +87,41 @@ describe('the sample tasks', () => {
     expect(open.some((t) => (due(t) ?? 0) > 12 * HOUR && (due(t) ?? 0) < 2 * DAY)).toBe(true) // tomorrow
     expect(open.some((t) => (due(t) ?? 0) >= 2 * DAY)).toBe(true) // further on
     expect(open.some((t) => t.due_at === null)).toBe(true)
+  })
+
+  describe('of the person of the demo', () => {
+    const mine = open.filter((t) => t.assignee_id === DEMO_PROFILE.id)
+    const ahead = (t: Task) => Date.parse(t.due_at ?? '') - NOW.getTime()
+    const late = (t: Task) => t.due_at !== null && ahead(t) < 0
+    const withinTheHour = (t: Task) => t.due_at !== null && ahead(t) > 0 && ahead(t) <= HOUR
+    const laterToday = (t: Task) => ahead(t) > HOUR && ahead(t) < 6 * HOUR
+    const tomorrow = (t: Task) => ahead(t) > 12 * HOUR && ahead(t) < 2 * DAY
+
+    it('are late, due within the hour, due later today, due tomorrow, and have no date, so that every part of the Today screen has something', () => {
+      expect(mine.some(late)).toBe(true)
+      expect(mine.some(withinTheHour)).toBe(true)
+      expect(mine.some(laterToday)).toBe(true)
+      expect(mine.some(tomorrow)).toBe(true)
+      expect(mine.some((t) => t.due_at === null)).toBe(true)
+    })
+
+    it('have a reminder on a late task, on one within the hour, on one later today and on one tomorrow', () => {
+      const reminded = mine.filter((t) => t.remind_min !== null)
+      expect(reminded.some(late)).toBe(true)
+      expect(reminded.some(withinTheHour)).toBe(true)
+      expect(reminded.some(laterToday)).toBe(true)
+      expect(reminded.some(tomorrow)).toBe(true)
+    })
+
+    it('have a reminder that is on at the start, so that the strip has something to show', () => {
+      expect(activeReminders(tasks, NOW, {}, DEMO_PROFILE.id).length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('have reminders that come within the hour and later on, so that the demo can show one arriving', () => {
+      const plan = planNotifications(tasks, NOW, {}, DEMO_PROFILE.id)
+      expect(plan.some((n) => n.at.getTime() - NOW.getTime() <= HOUR)).toBe(true)
+      expect(plan.length).toBeGreaterThanOrEqual(4)
+    })
   })
 
   it('include tasks that are done: one today, one a few days ago and one from long ago', () => {

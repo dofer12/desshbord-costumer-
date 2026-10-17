@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { Task } from '../tasks/model'
-import type { Permission } from './notifier'
+import type { Notifier, Permission } from './notifier'
 import type { Snoozed } from './reminders'
 
 export const REMINDER_PROBLEM = 'לא הצלחנו לתזמן התראות במכשיר. התזכורות ממשיכות להופיע בתוך האפליקציה.'
@@ -24,6 +24,12 @@ export interface RemindersValue {
 }
 
 export const RemindersContext = createContext<RemindersValue | null>(null)
+
+/**
+ * The notifier that the page gives to the reminders in place of the one of the platform. Only the demo
+ * gives one (it has no permission to ask for and nothing to show); anywhere else it is null.
+ */
+export const NotifierContext = createContext<Notifier | null>(null)
 
 export function useReminders(): RemindersValue {
   const value = useContext(RemindersContext)
