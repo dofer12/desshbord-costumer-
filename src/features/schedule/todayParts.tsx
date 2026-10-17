@@ -58,60 +58,68 @@ function owner(task: Task, people: Map<string, Profile>): string {
   return `בטיפול של ${people.get(task.assignee_id)?.display_name ?? 'לא ידוע'}`
 }
 
+/** A task of the queue: when, what and who, and the two things to do with it, which are done and put off. */
+function QueueRow({ task, statuses, people, now, onDone, onPostpone }: Omit<QueueProps, 'tasks'> & { task: Task }) {
+  const due = task.due_at
+  return (
+    <li className={`queue-item is-${due === null ? 'none' : relativeTo(due, now).state}`}>
+      <div className="queue-when">
+        {due === null ? (
+          <span className="queue-relative">ללא מועד</span>
+        ) : (
+          <>
+            <time dateTime={due}>{formatDue(due, now)}</time>
+            <Relative task={task} now={now} />
+          </>
+        )}
+      </div>
+      <div className="queue-main">
+        <TitleLink task={task} base="/today" />
+        <div className="card-line">
+          <StatusBadge task={task} statuses={statuses} />
+          <Copyable value={task.order_number} label="מספר הזמנה" />
+        </div>
+        <Customer task={task} />
+        <span className="muted">{owner(task, people)}</span>
+      </div>
+      <div className="queue-actions">
+        <button type="button" className="btn" aria-label={`בוצע: ${taskTitle(task)}`} onClick={() => onDone(task.id)}>
+          בוצע
+        </button>
+        <select
+          aria-label={`דחיית ${taskTitle(task)}`}
+          value=""
+          onChange={(event) => event.target.value && onPostpone(task, event.target.value as PostponeChoice)}
+        >
+          <option value="">דחה…</option>
+          {POSTPONE.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </li>
+  )
+}
+
 /** What is late and what is left of today, as a list to work through. */
-export function Queue({ tasks, statuses, people, now, onDone, onPostpone }: QueueProps) {
+export function Queue({ tasks, ...row }: QueueProps) {
   return (
     <ul className="queue" aria-labelledby="queue-heading">
       {tasks.map((task) => (
-        <li key={task.id} className={`queue-item is-${relativeTo(task.due_at as string, now).state}`}>
-          <div className="queue-when">
-            <time dateTime={task.due_at as string}>{formatDue(task.due_at as string, now)}</time>
-            <Relative task={task} now={now} />
-          </div>
-          <div className="queue-main">
-            <TitleLink task={task} base="/today" />
-            <div className="card-line">
-              <StatusBadge task={task} statuses={statuses} />
-              <Copyable value={task.order_number} label="מספר הזמנה" />
-            </div>
-            <Customer task={task} />
-            <span className="muted">{owner(task, people)}</span>
-          </div>
-          <div className="queue-actions">
-            <button type="button" className="btn" aria-label={`בוצע: ${taskTitle(task)}`} onClick={() => onDone(task.id)}>
-              בוצע
-            </button>
-            <select
-              aria-label={`דחיית ${taskTitle(task)}`}
-              value=""
-              onChange={(event) => event.target.value && onPostpone(task, event.target.value as PostponeChoice)}
-            >
-              <option value="">דחה…</option>
-              {POSTPONE.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </li>
+        <QueueRow key={task.id} task={task} {...row} />
       ))}
     </ul>
   )
 }
 
-/** The tasks that have no time yet, a few of them, each with its status and a button for done. */
-export function Undated({ tasks, statuses, onDone }: { tasks: Task[]; statuses: Map<string, Status>; onDone(id: string): void }) {
+/** The tasks that have no time yet, a few of them, as rows of the same kind: they too can be done, or put off to a time. */
+export function Undated({ tasks, ...row }: QueueProps) {
   return (
-    <ul className="undated" aria-labelledby="undated-heading">
+    <ul className="queue" aria-labelledby="undated-heading">
       {tasks.map((task) => (
-        <li key={task.id} className="undated-item">
-          <TitleLink task={task} base="/today" />
-          <StatusBadge task={task} statuses={statuses} />
-          <button type="button" className="btn" aria-label={`בוצע: ${taskTitle(task)}`} onClick={() => onDone(task.id)}>
-            בוצע
-          </button>
-        </li>
+        <QueueRow key={task.id} task={task} {...row} />
       ))}
     </ul>
   )

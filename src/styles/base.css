@@ -1342,8 +1342,7 @@ a.btn {
   font-size: 16px;
 }
 
-.queue,
-.undated {
+.queue {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1438,21 +1437,6 @@ a.btn {
   .queue-main {
     grid-area: main;
   }
-}
-
-.undated-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-
-.undated-item .btn {
-  margin-inline-start: auto;
 }
 
 .more-link {

@@ -126,7 +126,14 @@ export function TodayPage() {
           {view.undated.length > 0 && (
             <section className="today-section">
               <h3 id="undated-heading">משימות ללא מועד</h3>
-              <Undated tasks={undatedShown} statuses={statusByKey} onDone={(id) => markDone(id, true)} />
+              <Undated
+                tasks={undatedShown}
+                statuses={statusByKey}
+                people={peopleById}
+                now={now}
+                onDone={(id) => markDone(id, true)}
+                onPostpone={postpone}
+              />
               {undatedMore > 0 && (
                 <Link to="/tasks" className="more-link">
                   {undatedMore === 1 ? 'ועוד משימה אחת ללא מועד' : `ועוד ${undatedMore} משימות ללא מועד`}

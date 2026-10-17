@@ -340,6 +340,50 @@ describe('TodayPage: the tasks without a time', () => {
     expect(screen.getByRole('link', { name: 'ועוד משימה אחת ללא מועד' })).toBeInTheDocument()
   })
 
+  it('has the choice to put one off, as the queue has, and the new time is counted from now', async () => {
+    const { fake } = await mount({ tasks: week() })
+    const row = within(screen.getByRole('list', { name: 'משימות ללא מועד' })).getAllByRole('listitem')[0]
+    const select = within(row).getByLabelText('דחיית בלי מועד ב')
+    expect(within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)).toEqual(['', '30', '60', 'tomorrow'])
+
+    fireEvent.change(select, { target: { value: '30' } })
+    await settle()
+
+    expect(fake.tasks.upserts).toEqual([{ id: 'undated2', patch: { due_at: at(30) } }])
+    expect(screen.getByText('נדחה להיום · 12:30')).toBeInTheDocument()
+    // It has a time now: it is in the queue and no longer on the list of those with none.
+    expect(count('ללא מועד')).toBe('1')
+    expect(queueTitles()).toContain('בלי מועד ב')
+  })
+
+  it('puts one off to tomorrow at nine in Jerusalem', async () => {
+    const { fake } = await mount({ tasks: week() })
+    fireEvent.change(screen.getByLabelText('דחיית בלי מועד א'), { target: { value: 'tomorrow' } })
+    await settle()
+    expect(fake.tasks.upserts).toEqual([{ id: 'undated1', patch: { due_at: '2026-10-17T06:00:00.000Z' } }])
+  })
+
+  it('tells what the queue tells about a task: the customer, the phone, the order number and who has it', async () => {
+    const task = scheduled('u1', {
+      due_at: null,
+      remind_min: null,
+      title: 'לטפל בהחזר',
+      customer_name: 'רונית כהן',
+      customer_phone: '050-1234567',
+      order_number: '55671',
+    })
+    await mount({ tasks: [task] })
+    const row = within(screen.getByRole('list', { name: 'משימות ללא מועד' })).getAllByRole('listitem')[0]
+    expect(within(row).getByText('רונית כהן')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'העתקת טלפון: 050-1234567' })).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: 'חיוג אל 050-1234567' })).toHaveAttribute('href', 'tel:0501234567')
+    expect(within(row).getByRole('button', { name: 'העתקת מספר הזמנה: 55671' })).toBeInTheDocument()
+    expect(within(row).getByText(/בטיפול של/)).toBeInTheDocument()
+    expect(within(row).getByText('ללא מועד')).toBeInTheDocument()
+    // A task that has no time is not late: its row is not painted as one.
+    expect(row).not.toHaveClass('is-late')
+  })
+
   it('has no link for more when there are six or fewer, and no list when there are none', async () => {
     await mount({ tasks: week() })
     expect(screen.queryByRole('link', { name: /ועוד .* ללא מועד/ })).not.toBeInTheDocument()
