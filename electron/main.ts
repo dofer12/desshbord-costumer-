@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { createTrayBehavior, SHOW_WINDOW_CHANNEL, wireTray } from './trayBehavior.js'
 
 const APP_ID = 'io.github.dofer12.moked'
 const APP_TITLE = 'יומן משימות מוקד'
@@ -14,10 +15,30 @@ const smoke = process.env.MOKED_SMOKE_TEST === '1'
  */
 const demo = !app.isPackaged && process.argv.includes('--demo')
 const WEB_ENTRY = path.join(import.meta.dirname, '..', demo ? 'dist-demo' : 'dist', 'index.html')
+/**
+ * The icon of the tray. Packaged, it is a file beside the app (`extraResources` of electron-builder.yml),
+ * and not inside the archive of the app; from a checkout it is in build/.
+ */
+const TRAY_ICON = app.isPackaged ? path.join(process.resourcesPath, 'tray.png') : path.join(import.meta.dirname, '..', 'build', 'tray.png')
 // A demo keeps away from the real profile (stored sessions), and may run beside the real app.
 if (demo) app.setPath('userData', `${app.getPath('userData')}-demo`)
 
+/**
+ * The app stays in the tray when its window is closed, so that the reminders (timers of the page) go on
+ * and arrive. Only the smoke test and the demo, which show the first screen, leave with their window.
+ */
+const stayInTray = !smoke && !demo
+
 let mainWindow: BrowserWindow | null = null
+/** Held for as long as the app runs: a tray that is garbage collected disappears from the notification area. */
+let tray: Tray | null = null
+
+const behavior = createTrayBehavior({
+  window: () => mainWindow,
+  mainFrame: () => mainWindow?.webContents.mainFrame ?? null,
+  stayInTray,
+  quit: () => app.quit(),
+})
 
 /** Only plain web links ever leave the app; everything else is dropped. */
 function openExternally(url: string) {
@@ -35,6 +56,10 @@ interface SmokeResult {
   lang: string
   dir: string
   title: string
+  /** `typeof window.mokedDesktop?.showWindow`: "function" when the preload ran and gave the page its one function. */
+  bridge: string
+  /** Whether the icon of the tray was found and is a picture. */
+  trayIcon: boolean
 }
 
 async function runSmokeTest(win: BrowserWindow) {
@@ -50,9 +75,15 @@ async function runSmokeTest(win: BrowserWindow) {
         lang: document.documentElement.lang,
         dir: document.documentElement.dir,
         title: document.title,
+        bridge: typeof window.mokedDesktop?.showWindow,
       }), 800))
-    `)) as Omit<SmokeResult, 'ok'>
-    const result: SmokeResult = { ...page, ok: page.heading !== '' && page.lang === 'he' && page.dir === 'rtl' }
+    `)) as Omit<SmokeResult, 'ok' | 'trayIcon'>
+    const trayIcon = !nativeImage.createFromPath(TRAY_ICON).isEmpty()
+    const result: SmokeResult = {
+      ...page,
+      trayIcon,
+      ok: page.heading !== '' && page.lang === 'he' && page.dir === 'rtl' && page.bridge === 'function' && trayIcon,
+    }
     if (shotFile) writeFileSync(shotFile, (await win.webContents.capturePage()).toPNG())
     if (outFile) writeFileSync(outFile, JSON.stringify(result))
     clearTimeout(watchdog)
@@ -72,7 +103,15 @@ function createWindow() {
     title: APP_TITLE,
     show: !smoke,
     backgroundColor: '#eef2f3',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      // Gives the page the one thing it may ask of the app: to show its window (see preload.cts).
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
+      // The reminders are timers of the page, and they must run on time while the window is hidden in the tray.
+      backgroundThrottling: false,
+    },
   })
   mainWindow = win
 
@@ -86,6 +125,9 @@ function createWindow() {
       openExternally(url)
     }
   })
+  win.on('close', (event) => behavior.onClose(event))
+  // Windows does not say "before-quit" when it ends the session (a shutdown, a log-off): this is how the window learns it.
+  win.on('session-end', () => behavior.noteQuitting())
   win.on('closed', () => {
     mainWindow = null
   })
@@ -97,15 +139,20 @@ function createWindow() {
 if (!smoke && !demo && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
+  app.on('second-instance', () => behavior.show())
+  // Whatever leaves the app (the menu of the tray, a shutdown, an update) must find the window willing to close.
+  app.on('before-quit', () => behavior.noteQuitting())
+  app.on('window-all-closed', () => {
+    if (!stayInTray) app.quit()
   })
-  app.on('window-all-closed', () => app.quit())
+  ipcMain.on(SHOW_WINDOW_CHANNEL, (event) => behavior.onShowRequest(event))
   void app.whenReady().then(() => {
     app.setAppUserModelId(APP_ID)
     Menu.setApplicationMenu(null)
     createWindow()
+    if (stayInTray) {
+      tray = new Tray(nativeImage.createFromPath(TRAY_ICON))
+      wireTray(tray, behavior, { tooltip: APP_TITLE, buildMenu: (items) => Menu.buildFromTemplate(items) })
+    }
   })
 }

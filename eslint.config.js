@@ -24,7 +24,7 @@ export default defineConfig([
       'vite.config.ts',
       'capacitor.config.ts',
       'supabase/**/*.ts',
-      'electron/**/*.ts',
+      'electron/**/*.{ts,cts}',
       'scripts/**/*.{ts,mjs}',
     ],
     extends: [js.configs.recommended, tseslint.configs.recommended],

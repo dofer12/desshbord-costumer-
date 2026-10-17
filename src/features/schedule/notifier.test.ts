@@ -212,6 +212,71 @@ describe('createWebNotifier: a click', () => {
   })
 })
 
+describe('createWebNotifier: a click, with the window of the page as it is found', () => {
+  afterEach(() => {
+    delete window.mokedDesktop
+    vi.restoreAllMocks()
+  })
+
+  async function clickOne() {
+    const notifier = createWebNotifier({ notification: Ctor })
+    const opened = vi.fn()
+    notifier.onOpen(opened)
+    await notifier.replaceAll([plan(7, 5)])
+    await advance(5)
+    FakeNotification.shown[0].onclick?.()
+    return opened
+  }
+
+  it('asks the Windows app to show its window, which may be hidden in the tray, and focuses the page too', async () => {
+    const showWindow = vi.fn()
+    window.mokedDesktop = { showWindow }
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined)
+
+    const opened = await clickOne()
+
+    expect(showWindow).toHaveBeenCalledTimes(1)
+    expect(focus).toHaveBeenCalledTimes(1)
+    expect(opened).toHaveBeenCalledWith('task-7')
+  })
+
+  it('opens the task, and still focuses the page, when the app cannot show its window', async () => {
+    window.mokedDesktop = {
+      showWindow: () => {
+        throw new Error('the channel is closed')
+      },
+    }
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined)
+
+    const opened = await clickOne()
+
+    expect(focus).toHaveBeenCalledTimes(1)
+    expect(opened).toHaveBeenCalledWith('task-7')
+  })
+
+  it('opens the task, and still asks the app for its window, when the page cannot be focused', async () => {
+    const showWindow = vi.fn()
+    window.mokedDesktop = { showWindow }
+    vi.spyOn(window, 'focus').mockImplementation(() => {
+      throw new Error('not focusable')
+    })
+
+    const opened = await clickOne()
+
+    expect(showWindow).toHaveBeenCalledTimes(1)
+    expect(opened).toHaveBeenCalledWith('task-7')
+  })
+
+  it('works as it did in a browser, where no app stands behind the page', async () => {
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined)
+
+    const opened = await clickOne()
+
+    expect(focus).toHaveBeenCalledTimes(1)
+    expect(opened).toHaveBeenCalledWith('task-7')
+  })
+})
+
 describe('createMemoryNotifier', () => {
   it('keeps every plan it was given, counts the clears and answers the permission it was told to', async () => {
     const notifier = createMemoryNotifier('prompt')

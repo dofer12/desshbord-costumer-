@@ -11,3 +11,11 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+interface Window {
+  /** Present only in the Windows app (electron/preload.cts): what the page may ask of the app itself. */
+  mokedDesktop?: {
+    /** Shows the window of the app, which is hidden in the tray when it is closed. */
+    showWindow(): void
+  }
+}

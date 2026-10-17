@@ -51,6 +51,12 @@ export function createWebNotifier(
   const focusWindow =
     deps.focusWindow ??
     (() => {
+      // The Windows app keeps its window hidden in the tray, and only the app itself can show it again.
+      try {
+        globalThis.window?.mokedDesktop?.showWindow()
+      } catch {
+        // A window that cannot be asked for is not worth a failure.
+      }
       try {
         globalThis.window?.focus()
       } catch {

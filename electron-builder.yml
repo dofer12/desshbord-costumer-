@@ -8,6 +8,10 @@ files:
   - dist-electron/**
   - package.json
 asar: true
+# The icon of the tray is read by Electron itself, so it is a file beside the archive of the app.
+extraResources:
+  - from: build/tray.png
+    to: tray.png
 win:
   target:
     - target: nsis
