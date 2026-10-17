@@ -517,6 +517,160 @@ describe('closing', () => {
   })
 })
 
+describe('leaving the card by the history', () => {
+  const a = task('a')
+  /** The card of a, opened from the list, so that there is a page to go back to, as when a person taps a task. */
+  async function openFromList() {
+    const app = openCard('/tasks', [a], { dataRouter: true })
+    await app.user.click(await screen.findByRole('link', { name: 'משימה a' }))
+    await findCard()
+    return { ...app, router: app.router! }
+  }
+  const back = (router: { navigate(delta: number): Promise<void> }) => act(() => router.navigate(-1))
+  /** Whether the router still holds a navigation back, which it does until it is told to let it go or to leave it. */
+  const holdsBack = (router: { state: { blockers: Map<string, { state: string }> } }) => [...router.state.blockers.values()].some((blocker) => blocker.state !== 'unblocked')
+
+  it('goes back at once when nothing was typed', async () => {
+    const { router } = await openFromList()
+    await back(router)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/tasks')
+  })
+
+  it('asks before it throws away what was typed, stays on the card, and keeps the text', async () => {
+    const { user, router } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await back(router)
+    expect(router.state.location.pathname).toBe('/tasks/a')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(card().getByText('יש שינויים שלא נשמרו.')).toBeInTheDocument()
+    expect(card().getByLabelText('הערות')).toHaveValue('חשוב')
+  })
+
+  it('puts the focus on the safe answer, as the other questions of the card do', async () => {
+    const { user, router } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await back(router)
+    expect(card().getByRole('button', { name: 'חזרה לעריכה' })).toHaveFocus()
+  })
+
+  it('goes back, without saving, when the person says that the changes may go', async () => {
+    const { user, router, backend } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await back(router)
+    await user.click(card().getByRole('button', { name: 'סגירה בלי שמירה' }))
+    // The Back that was held is made again once the router has put the address back, which takes a few ticks.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(router.state.location.pathname).toBe('/tasks')
+    expect(backend.tasks.upserts).toHaveLength(0)
+  })
+
+  it('stays, with the text, when the person goes on writing, and asks again at the next Back', async () => {
+    const { user, router } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await back(router)
+    expect(holdsBack(router)).toBe(true)
+    await user.click(card().getByRole('button', { name: 'חזרה לעריכה' }))
+    expect(card().queryByText('יש שינויים שלא נשמרו.')).not.toBeInTheDocument()
+    expect(card().getByLabelText('הערות')).toHaveValue('חשוב')
+    expect(router.state.location.pathname).toBe('/tasks/a')
+    expect(holdsBack(router)).toBe(false)
+
+    await back(router)
+    expect(card().getByText('יש שינויים שלא נשמרו.')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/tasks/a')
+  })
+
+  it('goes on writing when Escape answers the question, and the Back that was held is let go of', async () => {
+    const { user, router } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await back(router)
+    await user.keyboard('{Escape}')
+    expect(card().queryByText('יש שינויים שלא נשמרו.')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/tasks/a')
+    expect(holdsBack(router)).toBe(false)
+    // Nothing is held any more: the question is asked afresh by the next way out.
+    await user.keyboard('{Escape}')
+    expect(card().getByText('יש שינויים שלא נשמרו.')).toBeInTheDocument()
+  })
+
+  // The card has changes in it, and leaves by its own doing: that is not a way out for the guard to hold back.
+  it.each([
+    ['saving', async (user: Awaited<ReturnType<typeof openFromList>>['user']) => user.click(card().getByRole('button', { name: 'שמירה' }))],
+    ['done', async (user: Awaited<ReturnType<typeof openFromList>>['user']) => user.click(card().getByRole('button', { name: 'בוצע' }))],
+    [
+      'deleting',
+      async (user: Awaited<ReturnType<typeof openFromList>>['user']) => {
+        await user.click(card().getByRole('button', { name: 'מחק משימה' }))
+        await user.click(card().getByRole('button', { name: 'כן, למחוק' }))
+      },
+    ],
+  ])('does not hold back the card that leaves by itself: %s', async (_how, leaveBy) => {
+    const { user, router } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await leaveBy(user)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/tasks')
+  })
+
+  it('does not hold back the sign-out: a person who is signed out is not asked about a card', async () => {
+    const { user, router, store } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await act(() => store.getState().signOut())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/login')
+  })
+
+  it('does not hold back the way out of the card that the person closed after the question', async () => {
+    const { user, router } = await openFromList()
+    await type(user, 'הערות', 'חשוב')
+    await user.keyboard('{Escape}')
+    await user.click(card().getByRole('button', { name: 'סגירה בלי שמירה' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/tasks')
+  })
+})
+
+describe('leaving the page while the card has changes in it', () => {
+  const a = task('a')
+  const leave = () => {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event
+  }
+
+  it('asks the browser to ask first, while there is something typed, and only then', async () => {
+    const { user } = openCard('/tasks/a', [a])
+    await findCard()
+    expect(leave().defaultPrevented).toBe(false)
+    await type(user, 'הערות', 'חשוב')
+    expect(leave().defaultPrevented).toBe(true)
+    await user.clear(card().getByLabelText('הערות'))
+    expect(leave().defaultPrevented).toBe(false)
+  })
+
+  it('does not ask once the card is closed', async () => {
+    const { user } = openCard('/tasks/a', [a])
+    await findCard()
+    await type(user, 'הערות', 'חשוב')
+    await user.click(card().getByRole('button', { name: 'שמירה' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(leave().defaultPrevented).toBe(false)
+  })
+
+  it('does not ask in the Windows app: there the window could not be closed, or the app left, with a card open', async () => {
+    window.mokedDesktop = { showWindow: () => undefined }
+    try {
+      const { user } = openCard('/tasks/a', [a])
+      await findCard()
+      await type(user, 'הערות', 'חשוב')
+      expect(leave().defaultPrevented).toBe(false)
+    } finally {
+      delete window.mokedDesktop
+    }
+  })
+})
+
 describe('opening again', () => {
   it('opens the same card again after it was closed, which means that the page went back to the list', async () => {
     const { user } = openCard('/tasks', [task('a')])

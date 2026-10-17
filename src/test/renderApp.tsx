@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { App } from '../App'
 import { AuthProvider } from '../features/auth/AuthProvider'
 import { createAuthStore } from '../features/auth/authStore'
@@ -16,6 +16,11 @@ interface RenderOptions {
   configureBackend?: (fake: FakeBackend) => void
   /** Set to false to leave the store in its initial "loading" state. */
   init?: boolean
+  /**
+   * Renders under a router that can hold a navigation back and be told to go back (as the app runs), and
+   * returns it. The others are the router of the tests, which cannot: the app has to cope with both.
+   */
+  dataRouter?: boolean
 }
 
 /** Renders the whole app against a fake backend. `ready` resolves when start-up has settled. */
@@ -26,14 +31,21 @@ export function renderApp(options: RenderOptions = {}) {
   options.configureBackend?.(backend)
   const store = createAuthStore(fake.gateway)
   const ready = options.init === false ? Promise.resolve() : store.getState().init()
+  const router = options.dataRouter
+    ? createMemoryRouter([{ path: '*', element: <App serverHost="test.supabase.co" /> }], { initialEntries: [options.path ?? '/'] })
+    : undefined
   render(
     <AuthProvider store={store}>
       <BackendContext value={backend.backend}>
-        <MemoryRouter initialEntries={[options.path ?? '/']}>
-          <App serverHost="test.supabase.co" />
-        </MemoryRouter>
+        {router ? (
+          <RouterProvider router={router} />
+        ) : (
+          <MemoryRouter initialEntries={[options.path ?? '/']}>
+            <App serverHost="test.supabase.co" />
+          </MemoryRouter>
+        )}
       </BackendContext>
     </AuthProvider>,
   )
-  return { fake, store, ready, backend }
+  return { fake, store, ready, backend, router }
 }

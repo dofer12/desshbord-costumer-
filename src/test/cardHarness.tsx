@@ -29,6 +29,8 @@ interface Options {
   backend?: (fake: FakeBackend) => void
   /** Who is signed in. Dana, an employee, unless it says otherwise. */
   as?: Profile
+  /** Under a router that can hold a navigation back, and that the test can send back (see renderApp). */
+  dataRouter?: boolean
 }
 
 /** The whole app on a wide screen, signed in as Dana, at the card of a task or at a new one. */
@@ -37,6 +39,7 @@ export function openCard(path: string, tasks: Task[] = [], options: Options = {}
   const user = userEvent.setup()
   const app = renderApp({
     path,
+    dataRouter: options.dataRouter,
     configure: (fake) => {
       fake.getStoredUserId.mockResolvedValue((options.as ?? DANA).id)
       fake.fetchProfile.mockResolvedValue(options.as ?? DANA)

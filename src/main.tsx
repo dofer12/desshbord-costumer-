@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { HashRouter } from 'react-router'
+import { createHashRouter, RouterProvider } from 'react-router'
 import { App } from './App'
 import { AuthProvider } from './features/auth/AuthProvider'
 import { createAuthStore, type AuthStore } from './features/auth/authStore'
@@ -23,15 +23,25 @@ const root = createRoot(document.getElementById('root')!)
 
 function mount(store: AuthStore, backend: Backend, serverHost: string, demo?: { notifier: Notifier }) {
   void store.getState().init()
+  // A router that can hold a navigation back (a data router), so that the card of a task can ask before
+  // the Back button throws away what was typed in it (LeaveGuard). The routes of the app are inside the one route.
+  const router = createHashRouter([
+    {
+      path: '*',
+      element: (
+        <>
+          {demo && <DemoBanner />}
+          <App serverHost={serverHost} />
+        </>
+      ),
+    },
+  ])
   root.render(
     <StrictMode>
       <AuthProvider store={store}>
         <BackendContext value={backend}>
           <NotifierContext value={demo?.notifier ?? null}>
-            <HashRouter>
-              {demo && <DemoBanner />}
-              <App serverHost={serverHost} />
-            </HashRouter>
+            <RouterProvider router={router} />
           </NotifierContext>
         </BackendContext>
       </AuthProvider>

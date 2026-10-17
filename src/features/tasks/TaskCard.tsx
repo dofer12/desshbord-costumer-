@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Modal } from '../../ui/Modal'
 import { useAuth } from '../auth/authContext'
 import { ProductImage } from '../images/ProductImage'
@@ -11,10 +11,12 @@ import { fieldId } from './fieldId'
 import type { TaskEvent } from './gateways'
 import { History } from './History'
 import { actorName } from './historyText'
+import { LeaveGuard, type HeldNavigation } from './LeaveGuard'
 import { KIND_LABEL, PRIORITIES, PRIORITY_LABEL, TASK_KINDS, type Task } from './model'
 import { changedFields, isDirty, mergeRemote, normalizedTask, toDraft, type Draft } from './taskForm'
 import { useDirectory, useTasks } from './tasksContext'
 import { useTaskHistory } from './useTaskHistory'
+import { useUnloadWarning } from './useUnloadWarning'
 import { glassixUrl, validateTask, type TaskErrors } from './validation'
 
 interface Props {
@@ -100,6 +102,10 @@ export function TaskCard({ task, isNew, onClose }: Props) {
   const [openedAt] = useState(task.updated_at)
   const [attempted, setAttempted] = useState(false)
   const [asking, setAsking] = useState<'discard' | 'delete' | null>(null)
+  // A way out that the card did not take (the Back button, a link) and that is held back until the person answers.
+  const [held, setHeld] = useState<HeldNavigation | null>(null)
+  // The card is on its way out by its own doing (saved, done, deleted, given up): nothing holds that back.
+  const leaving = useRef(false)
   const safeAnswer = useRef<HTMLButtonElement>(null)
   const deleteButton = useRef<HTMLButtonElement>(null)
   // What had the focus when the question about closing was asked, and which question was asked before.
@@ -114,6 +120,19 @@ export function TaskCard({ task, isNew, onClose }: Props) {
     setBase(task)
     setDraft(mergeRemote(draft, base, task))
   }
+
+  const dirty = isDirty(base, draft)
+  const dirtyNow = useRef(dirty)
+  useEffect(() => {
+    dirtyNow.current = dirty
+  }, [dirty])
+  const shouldHold = useCallback(() => dirtyNow.current && !leaving.current, [])
+  const onHeld = useCallback((navigation: HeldNavigation) => {
+    returnTo.current = document.activeElement
+    setHeld(navigation)
+    setAsking('discard')
+  }, [])
+  useUnloadWarning(dirty)
 
   // The history is read again when the task changes, and it says who made the change, unless it was the person themselves.
   // The server writes the adding of a picture on the history without changing the task, so the pictures count too.
@@ -160,17 +179,38 @@ export function TaskCard({ task, isNew, onClose }: Props) {
     return true
   }
 
+  /** Leaves the card by its own doing. */
+  function leave() {
+    leaving.current = true
+    onClose()
+  }
+
+  /** Goes on with the card: the question is closed, and a way out that was held back is let go of. */
+  function stay() {
+    held?.reset()
+    setHeld(null)
+    setAsking(null)
+  }
+
+  /** The person said that what was typed may go: the way out that was held back goes through, or the card closes. */
+  function discard() {
+    if (held) {
+      leaving.current = true
+      held.proceed()
+    } else leave()
+  }
+
   function requestClose() {
-    if (asking) setAsking(null)
-    else if (isDirty(base, draft)) {
+    if (asking) stay()
+    else if (dirty) {
       returnTo.current = document.activeElement
       setAsking('discard')
-    } else onClose()
+    } else leave()
   }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault()
-    if (save()) onClose()
+    if (save()) leave()
   }
 
   const phone = draft.task.customer_phone.trim()
@@ -191,6 +231,7 @@ export function TaskCard({ task, isNew, onClose }: Props) {
 
   return (
     <Modal labelledBy={titleId} onClose={requestClose}>
+      <LeaveGuard shouldHold={shouldHold} onHeld={onHeld} />
       <form className="task-card-form" onSubmit={onSubmit} noValidate>
         <header className="card-head">
           <h2 id={titleId}>{isNew ? 'משימה חדשה' : taskTitle(base)}</h2>
@@ -335,7 +376,7 @@ export function TaskCard({ task, isNew, onClose }: Props) {
             <p>למחוק את המשימה?</p>
             <button type="button" className="btn danger" onClick={() => {
               softDelete(base.id, true)
-              onClose()
+              leave()
             }}>
               כן, למחוק
             </button>
@@ -346,10 +387,10 @@ export function TaskCard({ task, isNew, onClose }: Props) {
         ) : asking === 'discard' ? (
           <footer className="card-actions" role="alert">
             <p>יש שינויים שלא נשמרו.</p>
-            <button type="button" className="btn danger" onClick={onClose}>
+            <button type="button" className="btn danger" onClick={discard}>
               סגירה בלי שמירה
             </button>
-            <button type="button" className="btn" ref={safeAnswer} onClick={() => setAsking(null)}>
+            <button type="button" className="btn" ref={safeAnswer} onClick={stay}>
               חזרה לעריכה
             </button>
           </footer>
@@ -369,7 +410,7 @@ export function TaskCard({ task, isNew, onClose }: Props) {
                   onClick={() => {
                     if (!save()) return
                     markDone(base.id, base.done_at === null)
-                    onClose()
+                    leave()
                   }}
                 >
                   {base.done_at === null ? 'בוצע' : 'סימון כלא בוצע'}
