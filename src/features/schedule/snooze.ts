@@ -8,6 +8,18 @@ import { SNOOZE_MS, type Snoozed } from './reminders'
 
 export const snoozeKey = (userId: string) => `moked.snooze.${userId}`
 
+/**
+ * Whether two spellings of a due time are the same moment. The app writes a time as "…:00.000Z", and the
+ * server and the live connection give the same moment back as "…:00+00:00"; a snooze must not be lost
+ * because of that.
+ */
+export function sameDue(a: string | null, b: string | null): boolean {
+  if (a === b) return true
+  if (a === null || b === null) return false
+  const x = Date.parse(a)
+  return Number.isFinite(x) && x === Date.parse(b)
+}
+
 interface Entry {
   until: number
   due: string | null

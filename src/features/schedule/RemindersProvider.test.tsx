@@ -63,6 +63,7 @@ const Where = () => <p data-testid="where">{useLocation().pathname}</p>
 
 /** The actions of the tasks store, taken out for the test to use. */
 interface Actions {
+  load: () => Promise<void>
   update: (id: string, patch: Partial<Task>) => void
   markDone: (id: string, done: boolean) => void
   softDelete: (id: string, deleted: boolean) => void
@@ -70,11 +71,12 @@ interface Actions {
 const taken: { actions: Actions | null } = { actions: null }
 const controls = () => taken.actions as Actions
 function Controls() {
+  const load = useTasks((s) => s.load)
   const update = useTasks((s) => s.update)
   const markDone = useTasks((s) => s.markDone)
   const softDelete = useTasks((s) => s.softDelete)
   useEffect(() => {
-    taken.actions = { update, markDone, softDelete }
+    taken.actions = { load, update, markDone, softDelete }
   })
   return null
 }
@@ -291,6 +293,21 @@ describe('RemindersProvider: the strip of reminders and the snooze', () => {
     expect(text('active')).toBe('t1')
   })
 
+  it('keeps the snooze when the server spells the due time of the task differently, as the same moment', async () => {
+    await mount({ tasks: [ringing()] })
+    await settle()
+    fireEvent.click(screen.getByText('snooze t1'))
+    await settle()
+    expect(text('snoozed')).toBe('t1')
+
+    // The app writes a time as "…:00.000Z", the server and the live connection as "…:00+00:00".
+    act(() => controls().update('t1', { due_at: at(5).replace('.000Z', '+00:00') }))
+    await settle()
+
+    expect(text('snoozed')).toBe('t1')
+    expect(text('active')).toBe('')
+  })
+
   it.each([
     ['done', (id: string) => controls().markDone(id, true)],
     ['deleted', (id: string) => controls().softDelete(id, true)],
@@ -445,5 +462,105 @@ describe('RemindersProvider: the notifier it uses', () => {
     expect(lastPlan(own).map((p) => p.taskId)).toEqual(['t1'])
     expect(page.plans).toEqual([])
     expect(text('permission')).toBe('denied')
+  })
+})
+
+describe('RemindersProvider: before the tasks are there', () => {
+  /** The provider over a server whose first answer is slow, or fails. */
+  async function mountLoading(options: { delayMs?: number; failFirst?: boolean }) {
+    const auth = await signedIn()
+    const fake: FakeBackend = createFakeBackend({ tasks: [task('t1')] })
+    const load = fake.tasks.gateway.loadInitial
+    let attempts = 0
+    fake.tasks.gateway.loadInitial = async (when) => {
+      attempts += 1
+      if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs))
+      if (options.failFirst && attempts === 1) throw Object.assign(new Error('offline'), { status: 0 })
+      return load(when)
+    }
+    const notifier = createMemoryNotifier('granted')
+    render(
+      <AuthProvider store={auth}>
+        <BackendContext value={fake.backend}>
+          <MemoryRouter>
+            <TasksProvider>
+              <RemindersProvider notifier={notifier}>
+                <Controls />
+                <Probe />
+              </RemindersProvider>
+            </TasksProvider>
+          </MemoryRouter>
+        </BackendContext>
+      </AuthProvider>,
+    )
+    return { notifier }
+  }
+
+  it('plans nothing, and so cancels nothing, while the tasks are still on their way, and then plans them', async () => {
+    const { notifier } = await mountLoading({ delayMs: 2_000 })
+    await settle(500)
+    expect(notifier.plans).toEqual([])
+    await settle(3_000)
+    expect(notifier.plans.length).toBeGreaterThan(0)
+    expect(notifier.plans.every((plan) => plan.length > 0)).toBe(true)
+    expect(lastPlan(notifier).map((p) => p.taskId)).toEqual(['t1'])
+  })
+
+  it('leaves what is pending alone when the first load fails, and plans when a later one works', async () => {
+    const { notifier } = await mountLoading({ failFirst: true })
+    await settle(1_000)
+    expect(notifier.plans).toEqual([])
+    expect(notifier.cleared).toBe(0)
+
+    await act(async () => void (await controls().load()))
+    await settle()
+    expect(lastPlan(notifier).map((p) => p.taskId)).toEqual(['t1'])
+  })
+})
+
+describe('RemindersProvider: the state of the phone', () => {
+  it('reads the permission and the exact alarms again when the app comes back to the front', async () => {
+    const notifier = createMemoryNotifier('denied', { exactAlarms: 'denied' })
+    await mount({ notifier })
+    await settle()
+    expect(text('permission')).toBe('denied')
+    expect(text('exact')).toBe('denied')
+
+    // The person allowed both in the settings of the phone, and came back.
+    notifier.setPermission('granted')
+    notifier.setExactAlarms('granted')
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    await settle()
+
+    expect(text('permission')).toBe('granted')
+    expect(text('exact')).toBe('granted')
+  })
+
+  it('plans again, so that what is pending becomes exact, when exact alarms were allowed in the page of the settings', async () => {
+    const notifier = createMemoryNotifier('granted', { exactAlarms: 'denied' })
+    notifier.openExactAlarmSettings = async () => {
+      notifier.setExactAlarms('granted')
+    }
+    await mount({ tasks: [task('t1')], notifier })
+    await settle()
+    const plans = notifier.plans.length
+    expect(text('exact')).toBe('denied')
+
+    fireEvent.click(screen.getByText('settings'))
+    await settle() // the state is read again
+    await settle() // and the plan that follows it waits for the quarter of a second that changes are given
+
+    expect(text('exact')).toBe('granted')
+    expect(notifier.plans.length).toBeGreaterThan(plans)
+  })
+
+  it('shows the state as it is after the page of the settings was closed without a change', async () => {
+    const notifier = createMemoryNotifier('granted', { exactAlarms: 'denied' })
+    await mount({ notifier })
+    await settle()
+    fireEvent.click(screen.getByText('settings'))
+    await settle()
+    expect(text('exact')).toBe('denied')
+    expect(notifier.exactAlarmSettingsOpened).toBe(1)
   })
 })

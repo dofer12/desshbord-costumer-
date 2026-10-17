@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SNOOZE_MS } from './reminders'
-import { createSnoozeStore, snoozeKey } from './snooze'
+import { createSnoozeStore, sameDue, snoozeKey } from './snooze'
 
 // The snoozes of a person are kept in the storage of the device, one list per person, so that a snooze
 // survives closing the app and one person's snooze is not another's.
@@ -125,5 +125,23 @@ describe('createSnoozeStore', () => {
     const store = createSnoozeStore({ storage: null, userId: 'u', now: () => NOW })
     store.getState().snooze('a', null)
     expect(store.getState().snoozed).toEqual({ a: NOW + SNOOZE_MS })
+  })
+})
+
+describe('sameDue', () => {
+  it.each([
+    ['the same text', '2026-10-16T09:10:00.000Z', '2026-10-16T09:10:00.000Z', true],
+    ['the app and the server spelling of one moment', '2026-10-16T09:10:00.000Z', '2026-10-16T09:10:00+00:00', true],
+    ['one moment in two zones', '2026-10-16T09:10:00.000Z', '2026-10-16T12:10:00+03:00', true],
+    ['two moments a minute apart', '2026-10-16T09:10:00.000Z', '2026-10-16T09:11:00.000Z', false],
+    ['no due time on both sides', null, null, true],
+    ['a due time and none', '2026-10-16T09:10:00.000Z', null, false],
+    ['none and a due time', null, '2026-10-16T09:10:00.000Z', false],
+    ['the same text that is not a date', 'soon', 'soon', true],
+    ['two different texts that are not dates', 'soon', 'later', false],
+    ['a date and a text that is not one', '2026-10-16T09:10:00.000Z', 'soon', false],
+  ])('says %s: %s', (_what, a, b, same) => {
+    expect(sameDue(a, b)).toBe(same)
+    expect(sameDue(b, a)).toBe(same)
   })
 })

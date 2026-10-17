@@ -336,3 +336,21 @@ describe('chooseNotifier', () => {
     expect(chooseNotifier({ plugin: phone }).exactAlarms).toBeTypeOf('function')
   })
 })
+
+describe('createMemoryNotifier: exact alarms that change', () => {
+  it('answers with what it was last told, and can be told that the person allowed them', async () => {
+    const notifier = createMemoryNotifier('granted', { exactAlarms: 'denied' })
+    expect(await notifier.exactAlarms?.()).toBe('denied')
+    notifier.setExactAlarms('granted')
+    expect(await notifier.exactAlarms?.()).toBe('granted')
+  })
+
+  it('starts to model exact alarms when it is told about them, though it was made without', async () => {
+    const notifier = createMemoryNotifier('granted')
+    expect(notifier.exactAlarms).toBeUndefined()
+    notifier.setExactAlarms('denied')
+    expect(await notifier.exactAlarms?.()).toBe('denied')
+    await notifier.openExactAlarmSettings?.()
+    expect(notifier.exactAlarmSettingsOpened).toBe(1)
+  })
+})

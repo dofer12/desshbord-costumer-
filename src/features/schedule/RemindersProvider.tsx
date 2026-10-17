@@ -8,7 +8,7 @@ import { useTasks } from '../tasks/tasksContext'
 import { chooseNotifier, type Notifier, type Permission } from './notifier'
 import { NotifierContext, RemindersContext, REMINDER_PROBLEM, type RemindersValue } from './remindersContext'
 import { activeReminders, isReminderTask, planNotifications } from './reminders'
-import { createSnoozeStore } from './snooze'
+import { createSnoozeStore, sameDue } from './snooze'
 
 /** A change of the tasks is planned this long after the last one, so that a burst of changes is planned once. */
 const REPLAN_DEBOUNCE_MS = 250
@@ -49,6 +49,16 @@ export function RemindersProvider({ notifier: given, children }: { notifier?: No
     }
   }, [notifier])
 
+  /** Reads the permission and the exact alarms of the platform again: the person may have changed them in its settings. */
+  const refreshPlatform = useCallback(async () => {
+    try {
+      setPermission(await notifier.permission())
+    } catch {
+      setPermission('unsupported')
+    }
+    setExactAlarms(await readExactAlarms())
+  }, [notifier, readExactAlarms])
+
   useEffect(() => {
     let alive = true
     notifier.permission().then(
@@ -68,7 +78,9 @@ export function RemindersProvider({ notifier: given, children }: { notifier?: No
   useEffect(() => {
     const again = () => setRound((n) => n + 1)
     const onVisible = () => {
-      if (document.visibilityState === 'visible') again()
+      if (document.visibilityState !== 'visible') return
+      again()
+      void refreshPlatform()
     }
     const timer = setInterval(again, REPLAN_EVERY_MS)
     document.addEventListener('visibilitychange', onVisible)
@@ -76,11 +88,13 @@ export function RemindersProvider({ notifier: given, children }: { notifier?: No
       clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [])
+  }, [refreshPlatform])
 
-  // Everything that is pending is replaced by the plan for the tasks as they are now.
+  // Everything that is pending is replaced by the plan for the tasks as they are now. Not before the
+  // tasks have come: a plan made from nothing would cancel every notification that is pending, and a
+  // first load that fails would leave the person with none.
   useEffect(() => {
-    if (!meId) return
+    if (!meId || !loaded) return
     let alive = true
     const timer = setTimeout(() => {
       notifier.replaceAll(planNotifications(tasks, new Date(), snoozed, meId)).then(
@@ -92,7 +106,7 @@ export function RemindersProvider({ notifier: given, children }: { notifier?: No
       alive = false
       clearTimeout(timer)
     }
-  }, [notifier, tasks, snoozed, meId, permission, round])
+  }, [notifier, tasks, snoozed, meId, loaded, permission, exactAlarms, round])
 
   // When the provider goes away (a sign-out), nothing stays pending.
   useEffect(
@@ -110,7 +124,7 @@ export function RemindersProvider({ notifier: given, children }: { notifier?: No
     const store = snoozeStore.getState()
     for (const id of Object.keys(snoozed)) {
       const task = byId[id]
-      if (!task || !isReminderTask(task, meId) || task.due_at !== store.dueOf(id)) store.clear(id)
+      if (!task || !isReminderTask(task, meId) || !sameDue(task.due_at, store.dueOf(id))) store.clear(id)
     }
   }, [loaded, byId, snoozed, meId, snoozeStore])
 
@@ -138,11 +152,19 @@ export function RemindersProvider({ notifier: given, children }: { notifier?: No
       },
       exactAlarms,
       openExactAlarmSettings() {
-        void Promise.resolve(notifier.openExactAlarmSettings?.()).catch(() => undefined)
+        void (async () => {
+          try {
+            await notifier.openExactAlarmSettings?.()
+          } catch {
+            // The page of the settings could not be opened.
+          }
+          // The person may have allowed them there: the state is read again, and the plan is made again for it.
+          await refreshPlatform()
+        })()
       },
       problem,
     }),
-    [active, snoozed, snoozeStore, byId, permission, notifier, readExactAlarms, exactAlarms, problem],
+    [active, snoozed, snoozeStore, byId, permission, notifier, readExactAlarms, refreshPlatform, exactAlarms, problem],
   )
 
   return <RemindersContext value={value}>{children}</RemindersContext>

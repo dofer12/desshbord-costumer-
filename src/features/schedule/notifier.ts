@@ -134,6 +134,8 @@ export interface MemoryNotifier extends Notifier {
   /** The next call of `replaceAll` fails with this error. */
   failNext(error: unknown): void
   setPermission(permission: Permission): void
+  /** The platform has exact alarms from now on, in this state (the person allowed them, or took them away). */
+  setExactAlarms(state: 'granted' | 'denied'): void
 }
 
 export function createMemoryNotifier(
@@ -141,6 +143,7 @@ export function createMemoryNotifier(
   options: { exactAlarms?: 'granted' | 'denied' } = {},
 ): MemoryNotifier {
   let permission = initial
+  let exact = options.exactAlarms
   const handlers = new Set<(taskId: string) => void>()
   const failures: unknown[] = []
   const notifier: MemoryNotifier = {
@@ -174,14 +177,19 @@ export function createMemoryNotifier(
     setPermission(next) {
       permission = next
     },
+    setExactAlarms(next) {
+      exact = next
+      modelExactAlarms()
+    },
   }
-  if (options.exactAlarms) {
-    const state = options.exactAlarms
-    notifier.exactAlarms = async () => state
-    notifier.openExactAlarmSettings = async () => {
+  // Only a platform that has exact alarms answers about them: the others leave both methods out.
+  function modelExactAlarms() {
+    notifier.exactAlarms ??= async () => exact ?? 'granted'
+    notifier.openExactAlarmSettings ??= async () => {
       notifier.exactAlarmSettingsOpened += 1
     }
   }
+  if (exact) modelExactAlarms()
   return notifier
 }
 
