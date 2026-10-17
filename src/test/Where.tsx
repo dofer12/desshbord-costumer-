@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router'
 
-/** Shows where the router is, as text: a test finds it as the test id "where". */
+/** Shows where the router is, address and query, as text: a test finds it as the test id "where". */
 export function Where() {
-  return <p data-testid="where">{useLocation().pathname}</p>
+  const { pathname, search } = useLocation()
+  return <p data-testid="where">{pathname + search}</p>
 }
