@@ -1,10 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { NavLink, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import { useNow } from '../../lib/useNow'
 import { useAuth } from '../auth/authContext'
 import { ReminderStrip } from '../schedule/ReminderStrip'
 import { RemindersProvider } from '../schedule/RemindersProvider'
 import { todayBadge } from '../schedule/today'
+import { taskTitle } from '../tasks/display'
 import { MY_OPEN_TASKS, filterTasks } from '../tasks/selectors'
 import { useTasks } from '../tasks/tasksContext'
 
@@ -97,27 +98,90 @@ function Tabs() {
   )
 }
 
-/** "N שינויים ממתינים", and the changes that the server refused. */
+/** "N שינויים ממתינים". */
 function SyncStatus() {
   const pending = useTasks((state) => state.pending)
-  const failed = useTasks((state) => state.failed.length)
-  const retryFailed = useTasks((state) => state.retryFailed)
+  if (pending === 0) return null
   return (
-    <>
-      {pending > 0 && (
-        <p className="sync" role="status">
-          {countText(pending, 'שינוי אחד ממתין', 'שינויים ממתינים')}
-        </p>
-      )}
-      {failed > 0 && (
-        <p className="sync sync-failed" role="alert">
-          {countText(failed, 'שינוי אחד לא נשמר', 'שינויים לא נשמרו')}
-          <button type="button" className="btn" onClick={() => retryFailed()}>
-            נסו שוב
-          </button>
-        </p>
-      )}
-    </>
+    <p className="sync" role="status">
+      {countText(pending, 'שינוי אחד ממתין', 'שינויים ממתינים')}
+    </p>
+  )
+}
+
+/**
+ * The changes that the server refused: which task, why, and what can be done about it. They stay on the
+ * screen and are not sent again by themselves, so the person is told, and can open the task to mend
+ * what the server did not like, try again, or give the change up (after asking, since what was typed is lost).
+ */
+function RefusedChanges() {
+  const failed = useTasks((state) => state.failed)
+  const tasks = useTasks((state) => state.tasks)
+  const retryFailed = useTasks((state) => state.retryFailed)
+  const discardFailed = useTasks((state) => state.discardFailed)
+  /** The task whose change is being asked about. */
+  const [asking, setAsking] = useState<string | null>(null)
+  const safeAnswer = useRef<HTMLButtonElement>(null)
+  const wasAsking = useRef<string | null>(null)
+
+  // A question puts the focus on the safe answer, and the answer no gives it back to the button that asked.
+  useEffect(() => {
+    if (asking !== null) safeAnswer.current?.focus()
+    else if (wasAsking.current !== null) document.getElementById(`refused-give-up-${wasAsking.current}`)?.focus()
+    wasAsking.current = asking
+  }, [asking])
+
+  if (failed.length === 0) return null
+  return (
+    <section className="refused" role="alert">
+      <p className="refused-head">
+        <strong>{countText(failed.length, 'שינוי אחד לא נשמר', 'שינויים לא נשמרו')}</strong>
+        <button type="button" className="btn" onClick={() => retryFailed()}>
+          נסו שוב
+        </button>
+      </p>
+      <ul className="refused-list">
+        {failed.map(({ id, message }) => {
+          const task = tasks[id]
+          const title = task ? taskTitle(task) : 'משימה'
+          return (
+            <li key={id}>
+              <span className="refused-title">{title}</span>
+              <span className="refused-why">{message}</span>
+              {asking === id ? (
+                <>
+                  <span>לבטל את השינוי? מה שהוקלד יאבד.</span>
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={() => {
+                      discardFailed(id)
+                      setAsking(null)
+                    }}
+                  >
+                    כן, לבטל
+                  </button>
+                  <button type="button" className="btn" ref={safeAnswer} onClick={() => setAsking(null)}>
+                    לא, להשאיר
+                  </button>
+                </>
+              ) : (
+                <>
+                  {task && (
+                    <Link className="btn" to={`/tasks/${id}`} aria-label={`פתיחת המשימה: ${title}`}>
+                      פתיחת המשימה
+                    </Link>
+                  )}
+                  <button type="button" className="btn" id={`refused-give-up-${id}`} aria-label={`ביטול השינוי: ${title}`} onClick={() => setAsking(id)}>
+                    ביטול השינוי
+                  </button>
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
@@ -202,6 +266,7 @@ export function AppShell({ serverHost }: { serverHost: string }) {
           </div>
         </header>
         <ConnectionBanner />
+        <RefusedChanges />
         <ReminderStrip />
         <main className="app-main">
           <Outlet />

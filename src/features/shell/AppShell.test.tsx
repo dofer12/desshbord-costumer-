@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFakeBackend } from '../../test/fakeBackend'
+import { refusal } from '../../test/fakeTasksGateways'
 import { createFakeGateway, DANA, OWNER } from '../../test/fakeGateway'
 import { AuthProvider } from '../auth/AuthProvider'
 import { createAuthStore } from '../auth/authStore'
@@ -290,6 +291,93 @@ describe('the indicator of waiting changes', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('שינוי אחד לא נשמר')
     act(() => tasks.setState({ failed: [] }))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  describe('a change that the server refused', () => {
+    const refused = (id: string, title: string, over: Partial<Task> = {}): Task => ({ ...newTask('u-dana', id), no_glassix: true, title, ...over })
+
+    it('says which task it is, and why the server did not take it', async () => {
+      const { tasks } = await renderShell({ tasks: [refused('a', 'לטפל בהחזר'), refused('b', 'לחזור ללקוח')] })
+      act(() =>
+        tasks.setState({
+          failed: [
+            { id: 'a', message: 'אין הרשאה לשמור את השינוי.' },
+            { id: 'b', message: 'חסר מזהה שיחת Glassix, או סימון "אין שיחה ב-Glassix".' },
+          ],
+        }),
+      )
+      const list = within(screen.getByRole('alert')).getByRole('list')
+      const [first, second] = within(list).getAllByRole('listitem')
+      expect(first).toHaveTextContent('לטפל בהחזר')
+      expect(first).toHaveTextContent('אין הרשאה לשמור את השינוי.')
+      expect(second).toHaveTextContent('לחזור ללקוח')
+      expect(second).toHaveTextContent('חסר מזהה שיחת Glassix')
+    })
+
+    it('opens the task, so that what the server did not like can be mended', async () => {
+      const { tasks } = await renderShell({ tasks: [refused('a', 'לטפל בהחזר')] })
+      act(() => tasks.setState({ failed: [{ id: 'a', message: 'x' }] }))
+      await userEvent.setup().click(within(screen.getByRole('alert')).getByRole('link', { name: 'פתיחת המשימה: לטפל בהחזר' }))
+      expect(screen.getByText('a task card')).toBeInTheDocument()
+    })
+
+    it('has no link for a task that is not here, and still can be given up', async () => {
+      const { tasks } = await renderShell()
+      act(() => tasks.setState({ failed: [{ id: 'gone', message: 'x' }] }))
+      expect(within(screen.getByRole('alert')).queryByRole('link')).not.toBeInTheDocument()
+      expect(within(screen.getByRole('alert')).getByRole('button', { name: /ביטול השינוי/ })).toBeInTheDocument()
+    })
+
+    it('is given up only after the person has said yes, since what was typed is lost', async () => {
+      const { tasks } = await renderShell({ tasks: [refused('a', 'לטפל בהחזר')] })
+      const discardFailed = vi.fn()
+      act(() => tasks.setState({ failed: [{ id: 'a', message: 'x' }], discardFailed }))
+      const user = userEvent.setup()
+      const alert = () => within(screen.getByRole('alert'))
+
+      await user.click(alert().getByRole('button', { name: 'ביטול השינוי: לטפל בהחזר' }))
+      expect(discardFailed).not.toHaveBeenCalled()
+      expect(alert().getByText(/לבטל את השינוי/)).toBeInTheDocument()
+
+      await user.click(alert().getByRole('button', { name: 'לא, להשאיר' }))
+      expect(discardFailed).not.toHaveBeenCalled()
+      expect(alert().queryByText(/לבטל את השינוי/)).not.toBeInTheDocument()
+
+      await user.click(alert().getByRole('button', { name: 'ביטול השינוי: לטפל בהחזר' }))
+      await user.click(alert().getByRole('button', { name: 'כן, לבטל' }))
+      expect(discardFailed).toHaveBeenCalledExactlyOnceWith('a')
+    })
+
+    it('puts the focus on the safe answer, and gives it back to the button that asked when the answer is no', async () => {
+      const { tasks } = await renderShell({ tasks: [refused('a', 'לטפל בהחזר')] })
+      act(() => tasks.setState({ failed: [{ id: 'a', message: 'x' }] }))
+      const user = userEvent.setup()
+      const alert = () => within(screen.getByRole('alert'))
+      await user.click(alert().getByRole('button', { name: 'ביטול השינוי: לטפל בהחזר' }))
+      expect(alert().getByRole('button', { name: 'לא, להשאיר' })).toHaveFocus()
+      await user.click(alert().getByRole('button', { name: 'לא, להשאיר' }))
+      expect(alert().getByRole('button', { name: 'ביטול השינוי: לטפל בהחזר' })).toHaveFocus()
+    })
+
+    it('goes through the real store: a refused change is shown, given up, and the task is what the server has again', async () => {
+      const { tasks, fake } = await renderShell()
+      fake.tasks.rows.set('a', refused('a', 'לטפל בהחזר', { notes: 'on the server' }))
+      await tasks.getState().load()
+      fake.tasks.failNext(refusal(400, 'violates check constraint "tasks_glassix_rule"', '23514'))
+      tasks.getState().update('a', { notes: 'typed here' })
+      await tasks.getState().flush()
+
+      const alert = () => within(screen.getByRole('alert'))
+      expect(alert().getByText(/לטפל בהחזר/)).toBeInTheDocument()
+      expect(alert().getByText(/מזהה שיחת Glassix/)).toBeInTheDocument()
+      expect(tasks.getState().tasks.a.notes).toBe('typed here')
+
+      const user = userEvent.setup()
+      await user.click(alert().getByRole('button', { name: 'ביטול השינוי: לטפל בהחזר' }))
+      await user.click(alert().getByRole('button', { name: 'כן, לבטל' }))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(tasks.getState().tasks.a.notes).toBe('on the server')
+    })
   })
 })
 

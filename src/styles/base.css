@@ -263,13 +263,48 @@ a:focus-visible {
   border-radius: 999px;
 }
 
-.sync-failed {
-  color: var(--crit);
-  background: var(--crit-soft);
-  border-color: var(--crit);
+.sync .btn {
+  padding: 1px 10px;
+  font-size: 13px;
 }
 
-.sync .btn {
+/* The changes that the server refused: which task, why, and what can be done about it. */
+.refused {
+  padding: 8px max(16px, env(safe-area-inset-left));
+  font-size: 14px;
+  color: var(--crit);
+  background: var(--crit-soft);
+  border-block-end: 1px solid var(--crit);
+}
+
+.refused-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.refused-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.refused-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.refused-title {
+  font-weight: 600;
+}
+
+.refused .btn {
   padding: 1px 10px;
   font-size: 13px;
 }
