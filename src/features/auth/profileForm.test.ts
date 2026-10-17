@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateProfileForm } from './profileForm'
+import { checkDisplayName, validateProfileForm } from './profileForm'
 
 // The two things a person may change about themselves: the name that the team sees, and how many minutes
 // before the due time a new task of theirs reminds them. The same limits as the function of the
@@ -67,6 +67,28 @@ describe('the default reminder', () => {
     ['too many digits', '00015'],
   ])('is refused when it is %s', (_what, text) => {
     expect(bad('דנה', text).remind).toBe('התזכורת היא מספר שלם של דקות, מ-0 עד 1440.')
+  })
+})
+
+// The name of a person is judged the same wherever it is typed: the profile, the new employee, the rename.
+describe('checkDisplayName', () => {
+  it('says nothing about a name that can be used, trimmed or not', () => {
+    expect(checkDisplayName('דנה כהן')).toBeNull()
+    expect(checkDisplayName('  דנה כהן \n')).toBeNull()
+  })
+
+  it('says what is wrong with the other names, as the profile does', () => {
+    expect(checkDisplayName('   ')).toBe('הזינו שם.')
+    expect(checkDisplayName('דנה\tכהן')).toBe('השם מכיל תו שאי אפשר להציג.')
+    expect(checkDisplayName('א'.repeat(61))).toBe('השם ארוך מדי: עד 60 תווים.')
+    expect(checkDisplayName('א'.repeat(60))).toBeNull()
+  })
+
+  it('is what the form says about the name', () => {
+    for (const text of ['', '   ', 'דנה', 'א'.repeat(61), 'דנה\tכהן']) {
+      const result = validateProfileForm(text, '15')
+      expect(result.ok ? null : (result.errors.name ?? null), JSON.stringify(text)).toBe(checkDisplayName(text))
+    }
   })
 })
 

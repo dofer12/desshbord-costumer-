@@ -5,6 +5,8 @@ interface Props {
   labelledBy: string
   /** Called for the Escape key and for a click on the dark area; the owner decides whether to close. */
   onClose(): void
+  /** A question with a few answers: narrow, and not a whole screen on a phone. The card of a task is the large one. */
+  compact?: boolean
   children: ReactNode
 }
 
@@ -23,7 +25,7 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
  * the Tab key stays inside, Escape and a click outside ask the owner to close it, and the page
  * behind does not scroll. On a phone the styles make it fill the screen.
  */
-export function Modal({ labelledBy, onClose, children }: Props) {
+export function Modal({ labelledBy, onClose, compact = false, children }: Props) {
   const panel = useRef<HTMLDivElement>(null)
   const pressedOnBackdrop = useRef(false)
 
@@ -76,7 +78,7 @@ export function Modal({ labelledBy, onClose, children }: Props) {
 
   return (
     <div className="modal-backdrop" onMouseDown={onBackdropDown} onClick={onBackdropClick}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1} ref={panel} onKeyDown={onKeyDown}>
+      <div className={compact ? 'modal modal-compact' : 'modal'} role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1} ref={panel} onKeyDown={onKeyDown}>
         {children}
       </div>
     </div>

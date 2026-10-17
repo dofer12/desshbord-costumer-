@@ -55,6 +55,7 @@ function Tab({ to, label, count = 0, late = false, words }: TabProps) {
 function Tabs() {
   const tasks = useTasks((state) => state.tasks)
   const me = useAuth((state) => state.profile?.id ?? '')
+  const isAdmin = useAuth((state) => state.profile?.role === 'admin')
   const now = useNow()
   const list = useMemo(() => Object.values(tasks), [tasks])
   const today = useMemo(() => todayBadge(list, now, me), [list, now, me])
@@ -70,6 +71,7 @@ function Tabs() {
       />
       <Tab to="/tasks" label="משימות" count={open} words={countText(open, 'משימה פתוחה אחת', 'משימות פתוחות')} />
       <Tab to="/calendar" label="יומן" />
+      {isAdmin && <Tab to="/admin" label="ניהול" />}
     </nav>
   )
 }

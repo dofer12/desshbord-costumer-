@@ -9,12 +9,24 @@ export function normalizeEmail(raw: string): string {
 }
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/** The longest address that there is. */
+const MAX_EMAIL_LENGTH = 254
+
+/**
+ * The sentence for an address that cannot be used, or null. It is read as the sign-in reads it, trimmed and
+ * whatever the case, so that the address an administrator types for a new employee is the one that signs in.
+ */
+export function checkEmail(email: string): string | null {
+  const normalized = normalizeEmail(email)
+  if (!normalized) return 'הזינו כתובת אימייל.'
+  if (normalized.length > MAX_EMAIL_LENGTH || !EMAIL_SHAPE.test(normalized)) return 'כתובת האימייל אינה תקינה.'
+  return null
+}
 
 export function validateCredentials(email: string, password: string): CredentialErrors {
   const errors: CredentialErrors = {}
-  const normalized = normalizeEmail(email)
-  if (!normalized) errors.email = 'הזינו כתובת אימייל.'
-  else if (!EMAIL_SHAPE.test(normalized)) errors.email = 'כתובת האימייל אינה תקינה.'
+  const problem = checkEmail(email)
+  if (problem) errors.email = problem
   if (!password) errors.password = 'הזינו סיסמה.'
   return errors
 }

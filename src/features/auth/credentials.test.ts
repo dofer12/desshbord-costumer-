@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkNewPassword, normalizeEmail, validateCredentials, validateNewPassword } from './credentials'
+import { checkEmail, checkNewPassword, normalizeEmail, validateCredentials, validateNewPassword } from './credentials'
 
 describe('normalizeEmail', () => {
   it('trims and lowercases what phone keyboards capitalise and pad', () => {
@@ -31,6 +31,36 @@ describe('validateCredentials', () => {
 
   it('does not trim the password, because spaces can be part of it', () => {
     expect(validateCredentials('dana@example.com', '   ')).toEqual({})
+  })
+})
+
+// An address that an administrator types for a new employee is judged as the sign-in judges it.
+describe('checkEmail', () => {
+  it('accepts a plausible address, with its case and its padding', () => {
+    expect(checkEmail('dana@example.com')).toBeNull()
+    expect(checkEmail('  Dana@Example.COM ')).toBeNull()
+  })
+
+  it('asks for an address when there is none', () => {
+    expect(checkEmail('')).toBe('הזינו כתובת אימייל.')
+    expect(checkEmail('   ')).toBe('הזינו כתובת אימייל.')
+  })
+
+  it.each(['dana', 'dana@', 'dana@example', '@example.com', 'da na@example.com', 'a@b@c.com'])('refuses %j, which is not shaped like an address', (text) => {
+    expect(checkEmail(text)).toBe('כתובת האימייל אינה תקינה.')
+  })
+
+  it('refuses an address of more than 254 characters, which is the longest that there is', () => {
+    const local = 'a'.repeat(64)
+    expect(checkEmail(`${local}@${'b'.repeat(180)}.com`)).toBeNull()
+    expect(checkEmail(`${local}@${'b'.repeat(190)}.com`)).toBe('כתובת האימייל אינה תקינה.')
+    // Exactly 254 is the longest that there is, and 255 is one too many.
+    expect(checkEmail(`${local}@${'b'.repeat(185)}.com`)).toBeNull()
+    expect(checkEmail(`${local}@${'b'.repeat(186)}.com`)).toBe('כתובת האימייל אינה תקינה.')
+  })
+
+  it('is what the sign-in says about the address', () => {
+    for (const text of ['', 'dana', 'dana@example.com']) expect(validateCredentials(text, 'x').email ?? null).toBe(checkEmail(text))
   })
 })
 

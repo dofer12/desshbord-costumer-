@@ -1,4 +1,8 @@
 import { Navigate, Route, Routes } from 'react-router'
+import { AdminPage } from './features/admin/AdminPage'
+import { AdminStub } from './features/admin/AdminStub'
+import { EmployeesPage } from './features/admin/EmployeesPage'
+import { RequireAdmin } from './features/admin/RequireAdmin'
 import { LoginPage } from './features/auth/LoginPage'
 import { ProfilePage } from './features/auth/ProfilePage'
 import { AuthShell, RequireAuth } from './features/auth/routes'
@@ -42,6 +46,17 @@ export function App({ serverHost }: { serverHost: string }) {
               {cardRoutes}
             </Route>
             <Route path="profile" element={<ProfilePage />} />
+            <Route element={<RequireAdmin />}>
+              <Route path="admin" element={<AdminPage />}>
+                <Route index element={<Navigate to="employees" replace />} />
+                <Route path="employees" element={<EmployeesPage />} />
+                <Route path="statuses" element={<AdminStub title="סטטוסים" />} />
+                <Route path="settings" element={<AdminStub title="הגדרות" />} />
+                <Route path="import" element={<AdminStub title="ייבוא" />} />
+                <Route path="backup" element={<AdminStub title="גיבוי" />} />
+                <Route path="deleted" element={<AdminStub title="נמחקו לאחרונה" />} />
+              </Route>
+            </Route>
           </Route>
         </Route>
       </Route>

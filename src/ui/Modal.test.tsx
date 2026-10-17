@@ -52,6 +52,21 @@ describe('Modal', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true')
   })
 
+  it('is the large one, like the card of a task, unless it says that it is compact', async () => {
+    await open()
+    expect(screen.getByRole('dialog')).not.toHaveClass('modal-compact')
+    expect(screen.getByRole('dialog')).toHaveClass('modal')
+  })
+
+  it('can be compact, for a question that is not a screen of its own', () => {
+    render(
+      <Modal labelledBy="t" compact onClose={() => undefined}>
+        <h2 id="t">Title</h2>
+      </Modal>,
+    )
+    expect(screen.getByRole('dialog')).toHaveClass('modal', 'modal-compact')
+  })
+
   it('puts the focus on the first control when it opens', async () => {
     await open()
     expect(screen.getByLabelText('first')).toHaveFocus()

@@ -21,16 +21,26 @@ function hasControlCharacter(text: string): boolean {
 }
 
 /**
+ * The sentence for a name that cannot be used, or null. The name is judged trimmed, as it is sent: a person's
+ * own profile, a new employee and the rename of an administrator all hold the same lines.
+ */
+export function checkDisplayName(name: string): string | null {
+  const trimmed = name.trim()
+  if (trimmed === '') return 'הזינו שם.'
+  if (hasControlCharacter(trimmed)) return 'השם מכיל תו שאי אפשר להציג.'
+  if ([...trimmed].length > MAX_NAME_LENGTH) return `השם ארוך מדי: עד ${MAX_NAME_LENGTH} תווים.`
+  return null
+}
+
+/**
  * What the profile form holds, as it is to be sent: the name trimmed and the reminder as a whole number
  * of minutes. The two fields are judged together, so that a person is told about both at once.
  */
 export function validateProfileForm(name: string, remind: string): ProfileFormResult {
   const errors: ProfileFormErrors = {}
 
-  const trimmed = name.trim()
-  if (trimmed === '') errors.name = 'הזינו שם.'
-  else if (hasControlCharacter(trimmed)) errors.name = 'השם מכיל תו שאי אפשר להציג.'
-  else if ([...trimmed].length > MAX_NAME_LENGTH) errors.name = `השם ארוך מדי: עד ${MAX_NAME_LENGTH} תווים.`
+  const nameProblem = checkDisplayName(name)
+  if (nameProblem) errors.name = nameProblem
 
   // Digits and nothing else: no sign, no fraction, no exponent, and no digits of another alphabet.
   const minutes = remind.trim()
@@ -39,5 +49,5 @@ export function validateProfileForm(name: string, remind: string): ProfileFormRe
   }
 
   if (errors.name !== undefined || errors.remind !== undefined) return { ok: false, errors }
-  return { ok: true, input: { display_name: trimmed, default_remind_min: Number(minutes) } }
+  return { ok: true, input: { display_name: name.trim(), default_remind_min: Number(minutes) } }
 }
