@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { useNow } from '../../lib/useNow'
+import { BackupBanner } from '../admin/BackupBanner'
 import { useAuth } from '../auth/authContext'
 import { ROLE_LABEL } from '../auth/roles'
 import { useMembershipCheck } from '../auth/useMembershipCheck'
@@ -247,6 +248,7 @@ export function AppShell({ serverHost }: { serverHost: string }) {
           </div>
         </header>
         <ConnectionBanner />
+        <BackupBanner />
         <RefusedChanges />
         <ReminderStrip />
         <main className="app-main">

@@ -1,5 +1,6 @@
 import type { Profile, Role } from '../auth/types'
 import type { Settings, Status } from '../tasks/gateways'
+import type { Task } from '../tasks/model'
 import type { AdminErrorCode } from '../../../supabase/functions/admin-users/logic'
 import type { ImportItem } from './legacyFormat'
 
@@ -82,6 +83,14 @@ export interface ExistingKeys {
 
 /** The tasks that an import reads and writes. */
 export interface AdminTasksGateway {
+  /** How many tasks there are in the system, done and deleted ones too. */
+  count(): Promise<number>
+  /**
+   * Every task, done and deleted ones too, in pages of 1000 ordered by the time they were made and then by
+   * their id; `onPage` hears how many have been read. A page that fails is read once more and then the whole
+   * call fails, so that there is never half a list.
+   */
+  loadAll(onPage: (loaded: number) => void): Promise<Task[]>
   existingKeys(): Promise<ExistingKeys>
   /**
    * Makes the tasks, in chunks of 100 (`onProgress` hears how many are done after each chunk). Whatever the

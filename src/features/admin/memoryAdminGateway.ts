@@ -59,6 +59,8 @@ function taskOfItem(item: ImportItem, userId: string): Task {
 }
 
 const IMPORT_CHUNK = 100
+/** The tasks are read this many at a time, as the database API gives them. */
+const LIST_PAGE = 1000
 
 function outcomeOf(result: AdminResult): UserOutcome {
   if (!result.ok) return result.field === undefined ? { ok: false, code: result.code } : { ok: false, code: result.code, field: result.field }
@@ -190,6 +192,20 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
       },
     },
     tasks: {
+      async count() {
+        return taskStore.rows.size
+      },
+
+      async loadAll(onPage) {
+        // In the order of the database: by the time they were made, then by id.
+        const tasks = [...taskStore.rows.values()]
+          .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+          .map((task) => structuredClone(task))
+        for (let loaded = LIST_PAGE; loaded < tasks.length; loaded += LIST_PAGE) onPage(loaded)
+        onPage(tasks.length)
+        return tasks
+      },
+
       async existingKeys() {
         return keysOf(taskStore.rows)
       },

@@ -2,6 +2,7 @@ import { FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@s
 import { apiError, type ApiError } from '../../lib/apiError'
 import type { Profile } from '../auth/types'
 import type { Status } from '../tasks/gateways'
+import type { Task } from '../tasks/model'
 import type {
   AdminErrorCode,
   AdminGateway,
@@ -151,6 +152,19 @@ function createTasksGateway(client: SupabaseClient): AdminTasksGateway {
     throw new Error('Too many tasks to read')
   }
 
+  /** One page of tasks, from the row `from` on, in the order that never skips or repeats a row. */
+  async function readPage(from: number): Promise<Task[]> {
+    const { data, error, status } = await client
+      .from('tasks')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + KEYS_PAGE - 1)
+      .retry(false)
+    if (error) throw apiError(error, status)
+    return data as Task[]
+  }
+
   /** Who is importing: the tasks are theirs, as the policies of the database say. */
   async function importingUser(): Promise<string> {
     const { data } = await client.auth.getSession()
@@ -172,6 +186,25 @@ function createTasksGateway(client: SupabaseClient): AdminTasksGateway {
   }
 
   return {
+    async count() {
+      const { count, error, status } = await client.from('tasks').select('id', { count: 'exact', head: true }).retry(false)
+      if (error) throw apiError(error, status)
+      return count ?? 0
+    },
+
+    async loadAll(onPage) {
+      const tasks: Task[] = []
+      for (let page = 0; page < KEYS_MAX_PAGES; page++) {
+        const from = page * KEYS_PAGE
+        // A page that fails is read once more; a second failure fails the whole call, so that there is never half a list.
+        const rows = await readPage(from).catch(() => readPage(from))
+        tasks.push(...rows)
+        onPage(tasks.length)
+        if (rows.length < KEYS_PAGE) return tasks
+      }
+      throw new Error('Too many tasks to read')
+    },
+
     existingKeys,
 
     async importMany(items, onProgress) {

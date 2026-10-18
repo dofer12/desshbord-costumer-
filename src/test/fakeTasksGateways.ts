@@ -156,7 +156,8 @@ export function createFakeDirectory(): FakeDirectory {
   const memory = createMemoryDirectory({
     statuses: FAKE_STATUSES,
     profiles: [OWNER, DANA],
-    settings: { glassix_url_template: 'https://glassix.example/conversations/{id}' },
+    // The backup was made far ahead of any clock that a test sets, so that the reminder of the administrators is not on the page unless a test asks for it.
+    settings: { glassix_url_template: 'https://glassix.example/conversations/{id}', last_backup_at: '2099-12-31T00:00:00.000Z' },
   })
   const failures = createFailures()
   return {

@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { AdminPage } from './features/admin/AdminPage'
 import { AdminStub } from './features/admin/AdminStub'
+import { BackupPage } from './features/admin/BackupPage'
 import { EmployeesPage } from './features/admin/EmployeesPage'
 import { ImportPage } from './features/admin/ImportPage'
 import { RequireAdmin } from './features/admin/RequireAdmin'
@@ -56,7 +57,7 @@ export function App({ serverHost }: { serverHost: string }) {
                 <Route path="statuses" element={<StatusesPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="import" element={<ImportPage />} />
-                <Route path="backup" element={<AdminStub title="גיבוי" />} />
+                <Route path="backup" element={<BackupPage />} />
                 <Route path="deleted" element={<AdminStub title="נמחקו לאחרונה" />} />
               </Route>
             </Route>

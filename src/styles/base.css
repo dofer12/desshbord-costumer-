@@ -2168,6 +2168,27 @@ a.btn {
   font-weight: 600;
 }
 
+/* The backup: when the last one was made, the button, and what the file is. */
+.backup-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.backup-hint {
+  max-width: 70ch;
+}
+
+.banner a {
+  color: inherit;
+  font-weight: 600;
+}
+
 /* The import: two sections, each with a file, a preview of what it would do, and a button. */
 .import-section {
   display: flex;
