@@ -542,7 +542,7 @@ export function createDemoBackend(now: () => Date = () => new Date(), directory:
     directory: directory.gateway,
     attachments: pictures.gateway,
     // The user of the demo is an administrator, and the people of the demo are the ones that they manage.
-    admin: createMemoryAdminGateway({ directory, currentUserId: ME }),
+    admin: createMemoryAdminGateway({ directory, currentUserId: ME, tasks: memory }),
     outbox: () => createMemoryOutboxStorage(),
   }
 }

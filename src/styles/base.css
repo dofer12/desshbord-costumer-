@@ -2168,6 +2168,50 @@ a.btn {
   font-weight: 600;
 }
 
+/* The import: two sections, each with a file, a preview of what it would do, and a button. */
+.import-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.import-section h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.import-section textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 15px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.import-preview,
+.import-report {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--sunken);
+  border-radius: var(--r);
+}
+
+.import-problems {
+  margin: 0;
+  padding-inline-start: 20px;
+  font-size: 13px;
+}
+
 /* A question with a few answers, over the page: narrow, and not a whole screen on a phone. */
 .modal-compact {
   width: min(100%, 460px);

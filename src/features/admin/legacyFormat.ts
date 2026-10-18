@@ -91,6 +91,12 @@ export interface BackupReading {
   unmatchedHandlers: string[]
 }
 
+/** Whether a row of headers is the one of a backup of this system or of the old app: it has "מזהה" and "משימה". */
+export function isBackupHeader(header: string[]): boolean {
+  const names = header.map((value) => value.trim())
+  return names.includes(COL.id) && names.includes(COL.title)
+}
+
 /** The date and the time on the wall in Jerusalem at a moment, as the files write them: `15/10/2026 14:30`. Empty for none. */
 export function formatWall(iso: string | null): string {
   const { dueDate, dueTime } = fromDueAt(iso)

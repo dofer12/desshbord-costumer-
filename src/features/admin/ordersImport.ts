@@ -55,6 +55,11 @@ export const ORDER_FIELD_LABEL: Readonly<Record<OrderField, string>> = {
 /** The most orders that one import takes. */
 export const MAX_ORDERS = 300
 
+/** An order number as it is compared: without the spaces around it and without a leading "#". */
+export function orderKey(value: string): string {
+  return value.trim().replace(/^#\s*/, '')
+}
+
 /**
  * The column of each field, found in the row of the headers: the header is lower-cased and the marks of a
  * sorted column (▼ ▲ and a colon) are taken off; each field first looks for a header that is one of its names,
@@ -114,7 +119,7 @@ export function readOrders(rows: string[][], context: OrdersContext): OrdersRead
       const index = map[field]
       return index === undefined ? '' : String(row[index] ?? '').trim()
     }
-    const order = cell('order').replace(/^#\s*/, '')
+    const order = orderKey(cell('order'))
     const name = cell('name')
     if (!order && !name) return
     if (order && (context.existingOrders.has(order) || seen.has(order))) {

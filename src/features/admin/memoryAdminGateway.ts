@@ -1,8 +1,11 @@
 import { apiError } from '../../lib/apiError'
 import type { Profile } from '../auth/types'
 import { handleAdminRequest, type AdminDeps, type AdminResult } from '../../../supabase/functions/admin-users/logic'
-import type { MemoryDirectory } from '../tasks/memoryGateways'
-import type { AdminGateway, UserOutcome } from './gateways'
+import type { MemoryDirectory, MemoryTasks } from '../tasks/memoryGateways'
+import { newTask, SERVER_OWNED_FIELDS, type Task } from '../tasks/model'
+import type { AdminGateway, ExistingKeys, ImportOutcome, UserOutcome } from './gateways'
+import type { ImportItem } from './legacyFormat'
+import { orderKey } from './ordersImport'
 import { settingRows } from './settingsRules'
 import { cleanStatusPatch, newStatusRow } from './statusRules'
 
@@ -28,7 +31,34 @@ export interface MemoryAdminOptions {
   currentUserId: string | null | (() => string | null)
   /** Where the temporary passwords come from. By default the randomness of the platform. */
   randomBytes?: (n: number) => Uint8Array
+  /** The tasks that an import reads and makes: the rows of the pretend server, and how a new one arrives. Without them the import works on tasks of its own. */
+  tasks?: Pick<MemoryTasks, 'rows' | 'push'>
 }
+
+/** The keys that the tasks of the pretend server have. */
+function keysOf(rows: Map<string, Task>): ExistingKeys {
+  const legacyIds = new Set<string>()
+  const orderNumbers = new Set<string>()
+  for (const task of rows.values()) {
+    legacyIds.add(task.id)
+    if (task.legacy_id) legacyIds.add(task.legacy_id)
+    const order = orderKey(task.order_number)
+    if (order !== '' && task.deleted_at === null) orderNumbers.add(order)
+  }
+  return { legacyIds, orderNumbers }
+}
+
+/** The task that an item makes, stamped as the database stamps a new one. */
+function taskOfItem(item: ImportItem, userId: string): Task {
+  const at = new Date().toISOString()
+  const patch = Object.fromEntries(Object.entries(item.patch).filter(([field, value]) => value !== undefined && !SERVER_OWNED_FIELDS.has(field)))
+  const task: Task = { ...newTask(userId, item.id ?? crypto.randomUUID()), ...patch, created_at: at, updated_at: at }
+  task.customer_phone_digits = task.customer_phone.replace(/\D/g, '')
+  task.done_by = task.done_at === null ? null : userId
+  return task
+}
+
+const IMPORT_CHUNK = 100
 
 function outcomeOf(result: AdminResult): UserOutcome {
   if (!result.ok) return result.field === undefined ? { ok: false, code: result.code } : { ok: false, code: result.code, field: result.field }
@@ -37,6 +67,8 @@ function outcomeOf(result: AdminResult): UserOutcome {
 
 export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGateway {
   const { directory } = options
+  const ownRows = new Map<string, Task>()
+  const taskStore: Pick<MemoryTasks, 'rows' | 'push'> = options.tasks ?? { rows: ownRows, push: (task) => void ownRows.set(task.id, structuredClone(task)) }
   let made = 0
   const find = (test: (profile: Profile) => boolean) => directory.profiles.find(test)
   const copy = (profile: Profile | undefined): Profile | null => (profile ? { ...profile } : null)
@@ -50,6 +82,17 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
     if (!me || me.role !== 'admin' || !me.is_active) {
       throw apiError({ message: `new row violates row-level security policy for table "${table}"`, code: '42501' }, 403)
     }
+  }
+
+  /** The policies of the database: tasks are made by an active member, and by nobody who is not signed in. */
+  function requireMember(): string {
+    const id = actingUserId()
+    if (id === null) throw apiError({ message: 'JWT expired', code: 'PGRST301' }, 401)
+    const me = find((profile) => profile.id === id)
+    if (!me || !me.is_active) {
+      throw apiError({ message: 'new row violates row-level security policy for table "tasks"', code: '42501' }, 403)
+    }
+    return id
   }
 
   const deps: AdminDeps = {
@@ -144,6 +187,34 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
         // What is kept is a copy: the caller's list is theirs.
         for (const row of rows) Object.assign(directory.settings, { [row.key]: Array.isArray(row.value) ? [...row.value] : row.value })
         directory.changed()
+      },
+    },
+    tasks: {
+      async existingKeys() {
+        return keysOf(taskStore.rows)
+      },
+
+      async importMany(items, onProgress) {
+        const userId = requireMember()
+        const outcome: ImportOutcome = { added: 0, already: 0, failed: [] }
+        const known = keysOf(taskStore.rows)
+        onProgress(0, items.length)
+        for (let start = 0; start < items.length; start += IMPORT_CHUNK) {
+          const chunk = items.slice(start, start + IMPORT_CHUNK)
+          for (const item of chunk) {
+            // As the database does it: what has the old id that the item has is left as it is. An order number is not looked at: only the screen does that.
+            if ((item.legacyId !== null && known.legacyIds.has(item.legacyId)) || (item.id !== undefined && taskStore.rows.has(item.id))) {
+              outcome.already++
+              continue
+            }
+            const task = taskOfItem(item, userId)
+            taskStore.push(task)
+            if (item.legacyId !== null) known.legacyIds.add(item.legacyId)
+            outcome.added++
+          }
+          onProgress(Math.min(start + chunk.length, items.length), items.length)
+        }
+        return outcome
       },
     },
   }

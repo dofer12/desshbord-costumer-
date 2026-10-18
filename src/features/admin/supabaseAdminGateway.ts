@@ -2,9 +2,23 @@ import { FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@s
 import { apiError, type ApiError } from '../../lib/apiError'
 import type { Profile } from '../auth/types'
 import type { Status } from '../tasks/gateways'
-import type { AdminErrorCode, AdminGateway, AdminSettingsGateway, AdminStatusesGateway, UserFailureCode, UserOutcome } from './gateways'
+import type {
+  AdminErrorCode,
+  AdminGateway,
+  AdminSettingsGateway,
+  AdminStatusesGateway,
+  AdminTasksGateway,
+  ExistingKeys,
+  ImportOutcome,
+  UserFailureCode,
+  UserOutcome,
+} from './gateways'
+import { isKnown } from './importKeys'
+import type { ImportItem } from './legacyFormat'
+import { orderKey } from './ordersImport'
 import { settingRows } from './settingsRules'
 import { cleanStatusPatch, newStatusRow } from './statusRules'
+import { toAdminWriteMessage } from './writeErrors'
 
 // The administrator tools of the real app: the people of the team are made, reset, blocked and changed
 // by the Edge Function admin-users (supabase/functions/admin-users), the only code that holds the secret key.
@@ -17,6 +31,11 @@ const STATUS_COLUMNS = 'key,name_he,color,sort,is_active'
 /** The database says that a key exists: another administrator made it at the same moment. This many keys are tried. */
 const KEY_TRIES = 3
 const UNIQUE_VIOLATION = '23505'
+/** An import is written this many tasks in a request. */
+const IMPORT_CHUNK = 100
+/** The database API answers at most 1000 rows to one request; more pages than any team has tasks only stops a list that never ends. */
+const KEYS_PAGE = 1000
+const KEYS_MAX_PAGES = 200
 const CODES: readonly AdminErrorCode[] = ['unauthenticated', 'forbidden', 'invalid', 'email_taken', 'name_taken', 'not_found', 'last_admin', 'failed']
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -106,6 +125,90 @@ function createSettingsGateway(client: SupabaseClient): AdminSettingsGateway {
   }
 }
 
+function createTasksGateway(client: SupabaseClient): AdminTasksGateway {
+  async function existingKeys(): Promise<ExistingKeys> {
+    const legacyIds = new Set<string>()
+    const orderNumbers = new Set<string>()
+    for (let page = 0; page < KEYS_MAX_PAGES; page++) {
+      const from = page * KEYS_PAGE
+      const { data, error, status } = await client
+        .from('tasks')
+        .select('id,legacy_id,order_number,deleted_at')
+        // A fixed order, so that the pages neither overlap nor skip a row.
+        .order('id', { ascending: true })
+        .range(from, from + KEYS_PAGE - 1)
+        .retry(false)
+      if (error) throw apiError(error, status)
+      const rows = data as Array<{ id: string; legacy_id: string | null; order_number: string; deleted_at: string | null }>
+      for (const row of rows) {
+        legacyIds.add(row.id)
+        if (row.legacy_id) legacyIds.add(row.legacy_id)
+        const order = orderKey(row.order_number ?? '')
+        if (order !== '' && row.deleted_at === null) orderNumbers.add(order)
+      }
+      if (rows.length < KEYS_PAGE) return { legacyIds, orderNumbers }
+    }
+    throw new Error('Too many tasks to read')
+  }
+
+  /** Who is importing: the tasks are theirs, as the policies of the database say. */
+  async function importingUser(): Promise<string> {
+    const { data } = await client.auth.getSession()
+    const id = data.session?.user.id
+    if (!id) throw apiError({ message: 'No session', code: 'PGRST301' }, 401)
+    return id
+  }
+
+  /** One request for some of the items. Resolves with how many were made: what the database had already is left out of its answer. */
+  async function write(items: ImportItem[], userId: string): Promise<number> {
+    const rows = items.map((item) => ({ ...item.patch, ...(item.id === undefined ? {} : { id: item.id }), created_by: userId }))
+    // An upsert on the old id that ignores duplicates, and a row with no id gets the one of the database (missing=default).
+    const { data, error, status } = await client
+      .from('tasks')
+      .upsert(rows, { onConflict: 'legacy_id', ignoreDuplicates: true, defaultToNull: false })
+      .select('id')
+    if (error) throw apiError(error, status)
+    return data.length
+  }
+
+  return {
+    existingKeys,
+
+    async importMany(items, onProgress) {
+      const userId = await importingUser()
+      const outcome: ImportOutcome = { added: 0, already: 0, failed: [] }
+      onProgress(0, items.length)
+      for (let start = 0; start < items.length; start += IMPORT_CHUNK) {
+        const chunk = items.slice(start, start + IMPORT_CHUNK)
+        try {
+          const added = await write(chunk, userId)
+          outcome.added += added
+          outcome.already += chunk.length - added
+        } catch {
+          // The answer may have been lost after the database applied the chunk: what is there now is looked at
+          // before the second try, so that an order is not made twice.
+          // (When it cannot be looked at, the second try goes with the whole chunk.)
+          const known = await existingKeys().catch(() => null)
+          const fresh = known === null ? chunk : chunk.filter((item) => !isKnown(item, known))
+          outcome.already += chunk.length - fresh.length
+          if (fresh.length > 0) {
+            try {
+              const added = await write(fresh, userId)
+              outcome.added += added
+              outcome.already += fresh.length - added
+            } catch (err) {
+              const message = toAdminWriteMessage(err)
+              for (const item of fresh) outcome.failed.push({ key: item.legacyId ?? (item.patch.order_number || item.patch.title || ''), message })
+            }
+          }
+        }
+        onProgress(Math.min(start + chunk.length, items.length), items.length)
+      }
+      return outcome
+    },
+  }
+}
+
 export function createSupabaseAdminGateway(client: SupabaseClient): AdminGateway {
   async function call(body: Record<string, unknown>): Promise<UserOutcome> {
     try {
@@ -131,5 +234,6 @@ export function createSupabaseAdminGateway(client: SupabaseClient): AdminGateway
     },
     statuses: createStatusesGateway(client),
     settings: createSettingsGateway(client),
+    tasks: createTasksGateway(client),
   }
 }

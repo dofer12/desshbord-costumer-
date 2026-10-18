@@ -1,6 +1,7 @@
 import type { Profile, Role } from '../auth/types'
 import type { Settings, Status } from '../tasks/gateways'
 import type { AdminErrorCode } from '../../../supabase/functions/admin-users/logic'
+import type { ImportItem } from './legacyFormat'
 
 // What the screens of the administrator need from outside the app, as plain interfaces: the real thing
 // calls the Edge Function admin-users and the tables of the project (supabaseAdminGateway.ts), and the demo
@@ -61,10 +62,41 @@ export interface AdminSettingsGateway {
   save(patch: Partial<Settings>): Promise<void>
 }
 
+/** What an import came to. */
+export interface ImportOutcome {
+  /** Tasks that were made. */
+  added: number
+  /** Items that the database had already, by the id of the old app or of the task: they are left as they are. */
+  already: number
+  /** Items that could not be written, each with what to tell about it. `key` is the old id of the item, or its order number. */
+  failed: Array<{ key: string; message: string }>
+}
+
+/** The keys that tasks already have, for telling a new task from one that is here. */
+export interface ExistingKeys {
+  /** The ids that a file may call a task by: the ids of the old app and the ids of the tasks here. */
+  legacyIds: Set<string>
+  /** The order numbers of the tasks that are not deleted, without a leading "#". */
+  orderNumbers: Set<string>
+}
+
+/** The tasks that an import reads and writes. */
+export interface AdminTasksGateway {
+  existingKeys(): Promise<ExistingKeys>
+  /**
+   * Makes the tasks, in chunks of 100 (`onProgress` hears how many are done after each chunk). Whatever the
+   * database has already (by the id of the old app) is left as it is, so that a file imported twice, or at the
+   * same moment from two places, adds nothing the second time. A chunk that fails is tried once more, and then its
+   * items are reported while the next chunks still run. A write that cannot start at all throws.
+   */
+  importMany(items: ImportItem[], onProgress: (done: number, total: number) => void): Promise<ImportOutcome>
+}
+
 export interface AdminGateway {
   users: AdminUsersGateway
   statuses: AdminStatusesGateway
   settings: AdminSettingsGateway
+  tasks: AdminTasksGateway
 }
 
 /** What an administrator is told when a call about a person fails: in the plural of the imperative, with no word of the server. */
