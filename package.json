@@ -1,7 +1,7 @@
 {
   "name": "moked-tasks",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "יומן משימות מוקד - Moked task journal",
   "author": "dofer12",
   "type": "module",

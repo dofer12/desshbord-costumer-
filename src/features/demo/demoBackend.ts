@@ -494,6 +494,16 @@ export function createDemoTasks(at: Date): Task[] {
       remind_min: 30,
       glassix_conversation_id: 'demo-4829',
     }),
+    // A task that was deleted a few days ago, for the "recently deleted" page of the Admin area to show and restore.
+    sample('demo-deleted-quote', {
+      title: 'לשלוח ללקוח הצעת מחיר מעודכנת',
+      order_number: '900130',
+      customer_name: 'לקוח לדוגמה ל׳',
+      customer_phone: '050-0000030',
+      assignee_id: AVI,
+      no_glassix: true,
+      deleted_at: new Date(t - 3 * DAY).toISOString(),
+    }),
   ]
 }
 
@@ -504,6 +514,9 @@ function createDemoEvents(tasks: Task[]): TaskEvent[] {
     events.push({ task_id: task.id, actor_id: task.created_by, type: 'created', changes: {}, at: task.created_at })
     if (task.done_at !== null) {
       events.push({ task_id: task.id, actor_id: task.done_by, type: 'done', changes: { done_at: [null, task.done_at] }, at: task.done_at })
+    }
+    if (task.deleted_at !== null) {
+      events.push({ task_id: task.id, actor_id: ME, type: 'deleted', changes: { deleted_at: [null, task.deleted_at] }, at: task.deleted_at })
     }
   }
   return events.map((event, index) => ({ ...event, id: index + 1 }))
@@ -516,7 +529,8 @@ function createDemoEvents(tasks: Task[]): TaskEvent[] {
  */
 export function createDemoDirectory(): MemoryDirectory {
   return createMemoryDirectory({
-    statuses: demoStatuses(),
+    // One status that tasks have is blocked, so that the statuses page has something to say about it: it is not offered to new tasks and keeps the ones that have it.
+    statuses: demoStatuses().map((status) => (status.key === 'on-hold' ? { ...status, is_active: false } : status)),
     profiles: [DEMO_PROFILE, ...demoColleagues()],
     settings: { glassix_url_template: 'https://example.com/glassix/{id}' },
   })
