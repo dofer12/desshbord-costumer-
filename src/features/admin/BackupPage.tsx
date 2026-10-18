@@ -3,7 +3,7 @@ import { chooseFileSaver, type FileSaver, type SaveResult } from '../../lib/file
 import { useBackend } from '../tasks/backend'
 import type { Task } from '../tasks/model'
 import { useDirectory } from '../tasks/tasksContext'
-import { backupFileName } from './backupBanner'
+import { backupFileName } from './backupRules'
 import { toCsv } from './csv'
 import { formatWall, tasksToBackupRows } from './legacyFormat'
 import { toAdminWriteMessage } from './writeErrors'

@@ -2,7 +2,7 @@ import { Link } from 'react-router'
 import { useNow } from '../../lib/useNow'
 import { useAuth } from '../auth/authContext'
 import { useDirectory, useTasks } from '../tasks/tasksContext'
-import { backupDue } from './backupBanner'
+import { backupDue } from './backupRules'
 
 /**
  * The reminder to make a backup, above the pages of an administrator: when there are tasks and there is no
