@@ -32,7 +32,7 @@ export interface MemoryAdminOptions {
   /** Where the temporary passwords come from. By default the randomness of the platform. */
   randomBytes?: (n: number) => Uint8Array
   /** The tasks that an import reads and makes: the rows of the pretend server, and how a new one arrives. Without them the import works on tasks of its own. */
-  tasks?: Pick<MemoryTasks, 'rows' | 'push'>
+  tasks?: Pick<MemoryTasks, 'rows' | 'push'> & Partial<Pick<MemoryTasks, 'events'>>
 }
 
 /** The keys that the tasks of the pretend server have. */
@@ -61,6 +61,8 @@ function taskOfItem(item: ImportItem, userId: string): Task {
 const IMPORT_CHUNK = 100
 /** The tasks are read this many at a time, as the database API gives them. */
 const LIST_PAGE = 1000
+/** The most tasks that the list of the deleted ones shows. */
+const DELETED_LIMIT = 500
 
 function outcomeOf(result: AdminResult): UserOutcome {
   if (!result.ok) return result.field === undefined ? { ok: false, code: result.code } : { ok: false, code: result.code, field: result.field }
@@ -70,7 +72,8 @@ function outcomeOf(result: AdminResult): UserOutcome {
 export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGateway {
   const { directory } = options
   const ownRows = new Map<string, Task>()
-  const taskStore: Pick<MemoryTasks, 'rows' | 'push'> = options.tasks ?? { rows: ownRows, push: (task) => void ownRows.set(task.id, structuredClone(task)) }
+  const taskStore: Pick<MemoryTasks, 'rows' | 'push'> & Partial<Pick<MemoryTasks, 'events'>> =
+    options.tasks ?? { rows: ownRows, push: (task) => void ownRows.set(task.id, structuredClone(task)) }
   let made = 0
   const find = (test: (profile: Profile) => boolean) => directory.profiles.find(test)
   const copy = (profile: Profile | undefined): Profile | null => (profile ? { ...profile } : null)
@@ -204,6 +207,30 @@ export function createMemoryAdminGateway(options: MemoryAdminOptions): AdminGate
         for (let loaded = LIST_PAGE; loaded < tasks.length; loaded += LIST_PAGE) onPage(loaded)
         onPage(tasks.length)
         return tasks
+      },
+
+      async listDeleted(since) {
+        return [...taskStore.rows.values()]
+          .filter((task) => task.deleted_at !== null && Date.parse(task.deleted_at) >= since.getTime())
+          .sort((a, b) => (b.deleted_at ?? '').localeCompare(a.deleted_at ?? ''))
+          .slice(0, DELETED_LIMIT)
+          .map((task) => structuredClone(task))
+      },
+
+      async restore(id) {
+        const userId = requireMember()
+        const found = taskStore.rows.get(id)
+        // As the database is asked: only a task that is deleted is changed.
+        if (!found || found.deleted_at === null) return null
+        const restored: Task = { ...found, deleted_at: null, updated_at: new Date().toISOString() }
+        // The history is written the way the trigger of the database writes it.
+        const events = taskStore.events
+        if (events) {
+          const nextId = events.reduce((highest, event) => Math.max(highest, event.id), 0) + 1
+          events.push({ id: nextId, task_id: id, actor_id: userId, type: 'restored', changes: { deleted_at: [found.deleted_at, null] }, at: restored.updated_at })
+        }
+        taskStore.push(restored)
+        return structuredClone(restored)
       },
 
       async existingKeys() {

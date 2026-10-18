@@ -37,6 +37,8 @@ const IMPORT_CHUNK = 100
 /** The database API answers at most 1000 rows to one request; more pages than any team has tasks only stops a list that never ends. */
 const KEYS_PAGE = 1000
 const KEYS_MAX_PAGES = 200
+/** The most tasks that the list of the deleted ones shows. */
+const DELETED_LIMIT = 500
 const CODES: readonly AdminErrorCode[] = ['unauthenticated', 'forbidden', 'invalid', 'email_taken', 'name_taken', 'not_found', 'last_admin', 'failed']
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -203,6 +205,25 @@ function createTasksGateway(client: SupabaseClient): AdminTasksGateway {
         if (rows.length < KEYS_PAGE) return tasks
       }
       throw new Error('Too many tasks to read')
+    },
+
+    async listDeleted(since) {
+      const { data, error, status } = await client
+        .from('tasks')
+        .select('*')
+        .gte('deleted_at', since.toISOString())
+        .order('deleted_at', { ascending: false })
+        .limit(DELETED_LIMIT)
+        .retry(false)
+      if (error) throw apiError(error, status)
+      return data as Task[]
+    },
+
+    async restore(id) {
+      // Only a task that is deleted is changed, so that the second of two administrators who restore it gets "nothing", not a second restore on the history.
+      const { data, error, status } = await client.from('tasks').update({ deleted_at: null }).eq('id', id).not('deleted_at', 'is', null).select()
+      if (error) throw apiError(error, status)
+      return (data as Task[])[0] ?? null
     },
 
     existingKeys,

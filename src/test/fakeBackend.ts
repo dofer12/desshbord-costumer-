@@ -43,7 +43,7 @@ export function createFakeBackend(options: { tasks?: Task[]; now?: () => Date } 
       tasks: tasks.gateway,
       directory: directory.gateway,
       attachments: attachments.gateway,
-      admin: createMemoryAdminGateway({ directory: directory.memory, currentUserId: () => acting, tasks: { rows: tasks.rows, push: tasks.pushRemote } }),
+      admin: createMemoryAdminGateway({ directory: directory.memory, currentUserId: () => acting, tasks: { rows: tasks.rows, push: tasks.pushRemote, events: tasks.events } }),
       outbox(userId) {
         let storage = outboxes.get(userId)
         if (!storage) {

@@ -91,6 +91,13 @@ export interface AdminTasksGateway {
    * call fails, so that there is never half a list.
    */
   loadAll(onPage: (loaded: number) => void): Promise<Task[]>
+  /** The tasks that were deleted at or after `since`, the latest deletion first, at most 500. */
+  listDeleted(since: Date): Promise<Task[]>
+  /**
+   * Takes the deletion of a task back and resolves with the task as it is now. Resolves with null when the task
+   * is not deleted any more (another administrator restored it first): that is not a failure.
+   */
+  restore(id: string): Promise<Task | null>
   existingKeys(): Promise<ExistingKeys>
   /**
    * Makes the tasks, in chunks of 100 (`onProgress` hears how many are done after each chunk). Whatever the

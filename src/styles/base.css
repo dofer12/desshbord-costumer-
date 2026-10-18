@@ -2189,6 +2189,43 @@ a.btn {
   font-weight: 600;
 }
 
+/* The tasks that were deleted: a row for each, with what it was and when it went, and the button that brings it back. */
+.deleted-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deleted-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.deleted-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deleted-title {
+  overflow-wrap: anywhere;
+}
+
+.deleted-row .btn {
+  min-height: 40px;
+}
+
 /* The import: two sections, each with a file, a preview of what it would do, and a button. */
 .import-section {
   display: flex;
