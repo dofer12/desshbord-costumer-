@@ -234,6 +234,18 @@ function UserMenu({ serverHost }: { serverHost: string }) {
 const tabOf = (pathname: string) => pathname.split('/')[1] ?? ''
 
 /**
+ * Puts the focus on the page. The page is not a control, so it can take the focus only when it is asked to,
+ * and it gives up that right as soon as it loses the focus. If it always could, a click anywhere in it (on the
+ * dark area behind the card of a task, for one) would leave the focus on the page and not on nothing.
+ */
+function focusPage(page: HTMLElement | null) {
+  if (!page) return
+  page.tabIndex = -1
+  page.addEventListener('blur', () => page.removeAttribute('tabindex'), { once: true })
+  page.focus()
+}
+
+/**
  * When the person goes to another tab the focus goes to the page. Otherwise it would stay on the link that
  * was used (or be lost, when that link is gone, as the one in the menu of the user is), and a person who
  * works with the keyboard or with a screen reader would have to go through the whole bar again to reach
@@ -247,7 +259,7 @@ function useFocusPageOnTabChange(page: RefObject<HTMLElement | null>) {
     if (was.current === tab) return
     const first = was.current === ''
     was.current = tab
-    if (!first) page.current?.focus()
+    if (!first) focusPage(page.current)
   }, [tab, page])
 }
 
@@ -268,7 +280,7 @@ export function AppShell({ serverHost }: { serverHost: string }) {
           onClick={(event) => {
             // The address of the app is what follows the #, so the link must not be followed: it only moves the focus.
             event.preventDefault()
-            page.current?.focus()
+            focusPage(page.current)
           }}
         >
           דלגו לתוכן הראשי
@@ -285,7 +297,7 @@ export function AppShell({ serverHost }: { serverHost: string }) {
         <BackupBanner />
         <RefusedChanges />
         <ReminderStrip />
-        <main className="app-main" id="main" tabIndex={-1} ref={page}>
+        <main className="app-main" id="main" ref={page}>
           <Outlet />
         </main>
       </div>
