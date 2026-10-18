@@ -5,6 +5,16 @@ import { defineConfig } from 'vitest/config'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
+/** The address, or null when there is none or it is not an address. */
+function parseAddress(text: string | undefined): URL | null {
+  if (!text) return null
+  try {
+    return new URL(text)
+  } catch {
+    return null
+  }
+}
+
 /**
  * The Content-Security-Policy of the page: what it may load and where it may connect. Scripts and everything
  * else come from the page itself; connections go to the project (https, and the live connection over wss)
@@ -14,12 +24,7 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
  * `supabaseUrl` is the address of the project that the build is for; without it the page connects to nothing else.
  */
 export function contentSecurityPolicy(supabaseUrl: string | undefined): string {
-  let project: URL | null = null
-  try {
-    project = supabaseUrl ? new URL(supabaseUrl) : null
-  } catch {
-    project = null
-  }
+  const project = parseAddress(supabaseUrl)
   const connect = ["'self'", ...(project ? [project.origin, `wss://${project.host}`] : []), 'https://api.github.com']
   const images = ["'self'", 'data:', 'blob:', ...(project ? [project.origin] : [])]
   return [
