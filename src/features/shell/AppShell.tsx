@@ -1,5 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router'
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import { useNow } from '../../lib/useNow'
 import { BackupBanner } from '../admin/BackupBanner'
 import { useAuth } from '../auth/authContext'
@@ -230,15 +230,49 @@ function UserMenu({ serverHost }: { serverHost: string }) {
   )
 }
 
+/** The tab that an address is on: the first part of it. */
+const tabOf = (pathname: string) => pathname.split('/')[1] ?? ''
+
+/**
+ * When the person goes to another tab the focus goes to the page. Otherwise it would stay on the link that
+ * was used (or be lost, when that link is gone, as the one in the menu of the user is), and a person who
+ * works with the keyboard or with a screen reader would have to go through the whole bar again to reach
+ * what they opened. The card of a task opens inside its tab and has its own care for the focus; the first
+ * address (the bare address, which is sent on to Today) is not a change of tab.
+ */
+function useFocusPageOnTabChange(page: RefObject<HTMLElement | null>) {
+  const tab = tabOf(useLocation().pathname)
+  const was = useRef(tab)
+  useEffect(() => {
+    if (was.current === tab) return
+    const first = was.current === ''
+    was.current = tab
+    if (!first) page.current?.focus()
+  }, [tab, page])
+}
+
 /**
  * The frame of the app once somebody is signed in: the tabs, the state of the sync, the user menu, and
  * the reminders of the person, which are kept for as long as the frame is there and shown above every page.
  */
 export function AppShell({ serverHost }: { serverHost: string }) {
   useMembershipCheck()
+  const page = useRef<HTMLElement>(null)
+  useFocusPageOnTabChange(page)
   return (
     <RemindersProvider>
       <div className="app">
+        <a
+          className="skip-link"
+          href="#main"
+          onClick={(event) => {
+            // The address of the app is what follows the #, so the link must not be followed: it only moves the focus.
+            event.preventDefault()
+            page.current?.focus()
+          }}
+        >
+          דלגו לתוכן הראשי
+        </a>
         <header className="app-bar">
           <h1 className="display app-title">יומן משימות מוקד</h1>
           <Tabs />
@@ -251,7 +285,7 @@ export function AppShell({ serverHost }: { serverHost: string }) {
         <BackupBanner />
         <RefusedChanges />
         <ReminderStrip />
-        <main className="app-main">
+        <main className="app-main" id="main" tabIndex={-1} ref={page}>
           <Outlet />
         </main>
       </div>

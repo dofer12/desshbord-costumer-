@@ -339,6 +339,29 @@ a:focus-visible {
     max(16px, env(safe-area-inset-left));
 }
 
+/* The page takes the focus when the tab changes (and from the link below); it is not a control, so it shows no ring. */
+.app-main:focus {
+  outline: none;
+}
+
+/* The link that skips the bar: out of sight until the keyboard reaches it. */
+.skip-link {
+  position: absolute;
+  inset-block-start: -64px;
+  inset-inline-start: 12px;
+  z-index: 1000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  inset-block-start: 12px;
+}
+
 /*
  * On a phone the tabs are a bar at the bottom of the screen, where the thumb is. The card of a task
  * and the dialogs are above it (they are fixed with a higher layer), and the page leaves room for it.
@@ -2388,4 +2411,24 @@ a.btn {
 
 .demo-mode .auth-screen {
   min-height: calc(100dvh - var(--demo-offset));
+}
+
+.demo-mode .skip-link:focus {
+  inset-block-start: calc(var(--demo-offset) + 12px);
+}
+
+/*
+ * A person who turned the motion off in their device gets none: the transitions and the animations end at
+ * once and a scroll jumps. (The banner of the lost connection keeps its wait of four seconds, because that
+ * is a delay and not a motion: only the length of an animation is shortened, never its delay.)
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
