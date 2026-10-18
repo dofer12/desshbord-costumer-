@@ -14,6 +14,16 @@ export const REREAD_DELAY_MS = 300
 /** How long a change may take to be sent. A connection that carries nothing is given up on, so that it does not hold every change behind it. */
 export const REQUEST_TIMEOUT_MS = 20_000
 
+/** The wait in which the rows of a burst that come through the live connection are gathered, to be applied together at its end. */
+export const LIVE_BATCH_MS = 40
+
+/**
+ * How many rows may come within one such wait and be applied at once, each as it comes: the row of a person
+ * who saved a task is one, or a few. From this number on, the rest of the wait is a burst (an import of 300
+ * tasks is 300 rows within a moment), and its rows are held and applied together.
+ */
+export const LIVE_BURST_FROM = 4
+
 export interface TasksState {
   /** The tasks as the person sees them: the row of the server with the changes that are still waiting on top. */
   tasks: Record<string, Task>
@@ -78,6 +88,12 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
   let unsubscribe: (() => void) | null = null
   let timer: ReturnType<typeof setInterval> | null = null
   let rereadTimer: ReturnType<typeof setTimeout> | null = null
+  /** The end of the wait in which the live rows are counted; null when no wait is going on. */
+  let batchTimer: ReturnType<typeof setTimeout> | null = null
+  /** How many live rows came in the wait that is going on. */
+  let arrived = 0
+  /** The live rows of a burst that wait for the end of the wait, in the order they came. */
+  let held: Task[] = []
   let listeners: Array<[EventTarget, string, EventListener]> = []
   let wasDown = false
 
@@ -162,6 +178,54 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
       const known = server.get(row.id)
       if (!known || !newer(known, row)) server.set(row.id, row)
       local.delete(row.id)
+    }
+
+    /**
+     * Takes a row that the server gave, here or through the live connection. It says whether the screens have
+     * to be told: a row that is only part of a task that is not known here is not kept (a change of a task that
+     * is not here, without some of its columns, such as a long text that the change did not touch). The tasks are
+     * read again instead, and the task comes whole if it belongs.
+     */
+    function take(task: Task): boolean {
+      const known = server.get(task.id)
+      if (!known && !isWholeRow(task)) {
+        rereadTimer ??= setTimeout(() => {
+          rereadTimer = null
+          void get().load()
+        }, REREAD_DELAY_MS)
+        return false
+      }
+      // What the row leaves out is what did not change: it stays as it was.
+      acceptRow(known ? { ...known, ...task } : task)
+      return true
+    }
+
+    /**
+     * A row that comes through the live connection. A person who saves a task makes one row, applied at once.
+     * But an import of 300 tasks is 300 rows within a moment, and each of them would make a new list of all the
+     * tasks and draw the screens again: when a few rows have come within one short wait, the rest of that wait
+     * is held and applied together at its end.
+     */
+    function receive(task: Task) {
+      arrived += 1
+      batchTimer ??= setTimeout(endBatch, LIVE_BATCH_MS)
+      if (arrived < LIVE_BURST_FROM) {
+        if (take(task)) publish([task.id])
+      } else {
+        held.push(task)
+      }
+    }
+
+    /** Ends the wait: the rows that were held are applied in the order they came, and the screens are told once. */
+    function endBatch() {
+      if (batchTimer !== null) clearTimeout(batchTimer)
+      batchTimer = null
+      arrived = 0
+      const rows = held
+      held = []
+      const changed = new Set<string>()
+      for (const row of rows) if (take(row)) changed.add(row.id)
+      if (changed.size > 0) publish([...changed])
     }
 
     /** The server has the sent fields now: they leave the entry, and what was changed meanwhile stays. */
@@ -341,19 +405,7 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
       },
 
       applyRemote(task) {
-        const known = server.get(task.id)
-        if (!known && !isWholeRow(task)) {
-          // A change of a task that is not here, and without some of its columns (a long text that the change
-          // did not touch): half a row is not kept, the tasks are read again, and the task comes whole if it belongs.
-          rereadTimer ??= setTimeout(() => {
-            rereadTimer = null
-            void get().load()
-          }, REREAD_DELAY_MS)
-          return
-        }
-        // What the row leaves out is what did not change: it stays as it was.
-        acceptRow(known ? { ...known, ...task } : task)
-        publish([task.id])
+        if (take(task)) publish([task.id])
       },
 
       async search(query) {
@@ -369,7 +421,7 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
         if (unsubscribe) return
         wasDown = false
         unsubscribe = gateway.subscribe(
-          (event) => get().applyRemote(event.task),
+          (event) => receive(event.task),
           (live) => {
             set({ live })
             if (!live) {
@@ -401,6 +453,8 @@ export function createTasksStore(deps: { gateway: TasksGateway; storage: OutboxS
       stop() {
         unsubscribe?.()
         unsubscribe = null
+        // What came before the stop is not lost: the rows that are still held are applied now.
+        endBatch()
         if (timer !== null) clearInterval(timer)
         timer = null
         if (rereadTimer !== null) clearTimeout(rereadTimer)
