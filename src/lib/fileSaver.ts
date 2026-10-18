@@ -71,15 +71,16 @@ export function createNativeFileSaver(plugins: NativePlugins): FileSaver {
       try {
         const written = await plugins.filesystem.writeFile({ path: file.name, data: file.content, directory: Directory.Cache, encoding: Encoding.UTF8 })
         uri = written.uri
-      } catch {
-        throw new Error('The file could not be written.')
+      } catch (error) {
+        // What the plugin says has the path of the file in it: it is kept as the cause and is never shown.
+        throw new Error('The file could not be written.', { cause: error })
       }
       try {
         await plugins.share.share({ title: file.name, url: uri, dialogTitle: file.name })
         return 'shared'
       } catch (error) {
         if (wasCancelled(error)) return 'cancelled'
-        throw new Error('The file could not be shared.')
+        throw new Error('The file could not be shared.', { cause: error })
       }
     },
   }

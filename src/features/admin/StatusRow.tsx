@@ -9,6 +9,16 @@ export type SaveResult = 'saved' | 'failed' | 'skipped'
 /** Where the cursor goes when the row is where it is meant to be. */
 export type FocusTarget = 'name' | 'up' | 'down'
 
+/** Enter saves what is in the field and Escape gives the change up. A keyboard that is still composing a word is left alone. */
+function onKeys(event: KeyboardEvent<HTMLInputElement>, save: () => void, giveUp: () => void) {
+  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+    event.preventDefault()
+    save()
+  } else if (event.key === 'Escape') {
+    giveUp()
+  }
+}
+
 /** The colour that the swatch and the colour input show: the code being typed when it is one, else the colour that the status has. */
 function shownColor(draft: string, saved: string): string {
   if (checkColor(draft) === null) return normalizeColor(draft)
@@ -129,18 +139,6 @@ export function StatusRow({ status, others, index, count, openTasks, busy, onSav
     return () => input.removeEventListener('change', onPicked)
   }, [])
 
-  /** Enter saves what is in the field and Escape gives the change up. A keyboard that is still composing a word is left alone. */
-  function keysOf(save: () => void, giveUp: () => void) {
-    return (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-        event.preventDefault()
-        save()
-      } else if (event.key === 'Escape') {
-        giveUp()
-      }
-    }
-  }
-
   const shown = shownColor(color, status.color)
   const note = status.is_active ? null : openTasksNote(openTasks)
 
@@ -160,13 +158,16 @@ export function StatusRow({ status, others, index, count, openTasks, busy, onSav
             setName(event.target.value)
             setNameProblem(null)
           }}
-          onKeyDown={keysOf(
-            () => void commitName(),
-            () => {
-              setName(status.name_he)
-              setNameProblem(null)
-            },
-          )}
+          onKeyDown={(event) =>
+            onKeys(
+              event,
+              () => void commitName(),
+              () => {
+                setName(status.name_he)
+                setNameProblem(null)
+              },
+            )
+          }
           onBlur={() => void commitName()}
           aria-invalid={nameProblem ? true : undefined}
           aria-describedby={nameProblem ? nameProblemId : undefined}
@@ -203,13 +204,16 @@ export function StatusRow({ status, others, index, count, openTasks, busy, onSav
             setColor(event.target.value)
             setColorProblem(null)
           }}
-          onKeyDown={keysOf(
-            () => void commitColor(color),
-            () => {
-              setColor(status.color)
-              setColorProblem(null)
-            },
-          )}
+          onKeyDown={(event) =>
+            onKeys(
+              event,
+              () => void commitColor(color),
+              () => {
+                setColor(status.color)
+                setColorProblem(null)
+              },
+            )
+          }
           onBlur={() => void commitColor(color)}
           aria-invalid={colorProblem ? true : undefined}
           aria-describedby={colorProblem ? colorProblemId : undefined}
