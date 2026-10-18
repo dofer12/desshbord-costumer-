@@ -13,6 +13,8 @@ extraResources:
   - from: build/tray.png
     to: tray.png
 win:
+  # The icon of the app, from which electron-builder makes the .ico (scripts/make-icons.cjs draws it).
+  icon: build/icon.png
   target:
     - target: nsis
       arch: x64

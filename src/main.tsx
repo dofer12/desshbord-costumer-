@@ -14,10 +14,16 @@ import { NotifierContext } from './features/schedule/remindersContext'
 import { BackendContext, type Backend } from './features/tasks/backend'
 import { createSupabaseBackend } from './features/tasks/supabaseBackend'
 import { ConfigError, loadConfig } from './lib/config'
+import { registerShellWorker } from './lib/shellWorker'
 import { createSupabaseClient } from './lib/supabase'
+import { applyTheme, readTheme } from './lib/theme'
 import './styles/fonts'
 import './styles/tokens.css'
 import './styles/base.css'
+
+// The look that this device was given (light, dark, or whatever the device asks for), before the first paint of the app.
+applyTheme(readTheme())
+registerShellWorker()
 
 const root = createRoot(document.getElementById('root')!)
 

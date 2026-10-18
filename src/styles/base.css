@@ -2168,6 +2168,39 @@ a.btn {
   font-weight: 600;
 }
 
+/* The profile: the look of the app, and the version. */
+.theme-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.theme-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.theme-option input {
+  width: 18px;
+  height: 18px;
+}
+
+.update-check {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-check a {
+  color: var(--accent);
+}
+
 /* The backup: when the last one was made, the button, and what the file is. */
 .backup-box {
   display: flex;

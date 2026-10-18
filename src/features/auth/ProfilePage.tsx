@@ -4,6 +4,8 @@ import { PROFILE_MESSAGES } from './errors'
 import { PasswordForm } from './PasswordForm'
 import { validateProfileForm, type ProfileFormErrors } from './profileForm'
 import { ROLE_LABEL } from './roles'
+import { ThemePicker } from './ThemePicker'
+import { UpdateCheck } from './UpdateCheck'
 
 /**
  * Where a person looks after themselves: the name that the team sees, the reminder that their new tasks
@@ -27,6 +29,8 @@ export function ProfilePage() {
   const remindHintId = useId()
   const remindErrorId = useId()
   const passwordHeadingId = useId()
+  const themeHeadingId = useId()
+  const versionHeadingId = useId()
 
   if (!profile) return null
 
@@ -148,6 +152,17 @@ export function ProfilePage() {
       <section className="card profile-card" aria-labelledby={passwordHeadingId}>
         <h3 id={passwordHeadingId}>החלפת סיסמה</h3>
         <PasswordForm label="החלפת סיסמה" submitLabel="החלפת סיסמה" doneMessage="הסיסמה הוחלפה." />
+      </section>
+
+      <section className="card profile-card" aria-labelledby={themeHeadingId}>
+        <h3 id={themeHeadingId}>מראה</h3>
+        <ThemePicker />
+        <p className="sub">הבחירה נשמרת במכשיר הזה בלבד.</p>
+      </section>
+
+      <section className="card profile-card" aria-labelledby={versionHeadingId}>
+        <h3 id={versionHeadingId}>גרסה ועדכון</h3>
+        <UpdateCheck />
       </section>
     </section>
   )
